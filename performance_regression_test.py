@@ -55,7 +55,8 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
                       result['Total errors'])
 
     def get_test_xml(self, result, test_name=''):
-        test_content = """
+        return (
+            """
   <test name="%s: (%s) Loader%s CPU%s Keyspace%s" executed="yes">
     <description>"%s test, ami_id: %s, scylla version:
     %s", hardware: %s</description>
@@ -84,30 +85,33 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
       </metrics>
     </result>
   </test>
-""" % (test_name, result['loader_idx'],
-            result['loader_idx'],
-            result['cpu_idx'],
-            result['keyspace_idx'],
-            test_name,
-            self.params.get('ami_id_db_scylla'),
-            self.params.get('ami_id_db_scylla_desc'),
-            self.params.get('instance_type_db'),
-            self.params.get('ami_id_db_scylla'),
-            self.params.get('ami_id_db_scylla_desc'),
-            self.params.get('instance_type_db'),
-            result['op rate'],
-            result['op rate'],
-            result['partition rate'],
-            result['row rate'],
-            result['latency mean'],
-            result['latency median'],
-            result['latency 95th percentile'],
-            result['latency 99th percentile'],
-            result['latency 99.9th percentile'],
-            result['Total partitions'],
-            result['Total errors'])
-
-        return test_content
+"""
+            % (
+                test_name,
+                result['loader_idx'],
+                result['loader_idx'],
+                result['cpu_idx'],
+                result['keyspace_idx'],
+                test_name,
+                self.params.get('ami_id_db_scylla'),
+                self.params.get('ami_id_db_scylla_desc'),
+                self.params.get('instance_type_db'),
+                self.params.get('ami_id_db_scylla'),
+                self.params.get('ami_id_db_scylla_desc'),
+                self.params.get('instance_type_db'),
+                result['op rate'],
+                result['op rate'],
+                result['partition rate'],
+                result['row rate'],
+                result['latency mean'],
+                result['latency median'],
+                result['latency 95th percentile'],
+                result['latency 99th percentile'],
+                result['latency 99.9th percentile'],
+                result['Total partitions'],
+                result['Total errors'],
+            )
+        )
 
     def display_results(self, results, test_name=''):
         self.log.info(self.str_pattern, 'op-rate', 'partition-rate',
@@ -134,9 +138,8 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
         if debug_message:
             self.log.debug(debug_message)
 
-        if save_stats:
-            if not self.exists():
-                self.create_test_stats(sub_type=sub_type)
+        if save_stats and not self.exists():
+            self.create_test_stats(sub_type=sub_type)
         stress_queue = self.run_stress_thread(stress_cmd=stress_cmd, stress_num=stress_num, keyspace_num=keyspace_num,
                                               prefix=prefix, stats_aggregate_cmds=False)
         results = self.get_stress_results(queue=stress_queue, store_results=True)
@@ -145,7 +148,7 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
             self.display_results(results, test_name=test_name)
             self.check_regression()
             total_ops = self._get_total_ops()
-            self.log.debug('Total ops: {}'.format(total_ops))
+            self.log.debug(f'Total ops: {total_ops}')
             return total_ops
         return None
 
@@ -167,31 +170,27 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
             self.loaders.kill_cassandra_stress_thread()
 
     def preload_data(self):
-        # if test require a pre-population of data
-        prepare_write_cmd = self.params.get('prepare_write_cmd')
-        if prepare_write_cmd:
+        if prepare_write_cmd := self.params.get('prepare_write_cmd'):
             # create new document in ES with doc_id = test_id + timestamp
             # allow to correctly save results for future compare
             self.create_test_stats(sub_type='write-prepare', doc_id_with_timestamp=True)
             stress_queue = []
             params = {'prefix': 'preload-'}
             # Check if the prepare_cmd is a list of commands
-            if isinstance(prepare_write_cmd, list):
-                if len(prepare_write_cmd) == 1:
-                    prepare_write_cmd = prepare_write_cmd[0]
+            if isinstance(prepare_write_cmd, list) and len(prepare_write_cmd) == 1:
+                prepare_write_cmd = prepare_write_cmd[0]
             if isinstance(prepare_write_cmd, list):
                 # Check if it should be round_robin across loaders
                 if self.params.get('round_robin'):
                     self.log.debug('Populating data using round_robin')
-                    params.update({'stress_num': 1, 'round_robin': True})
+                    params |= {'stress_num': 1, 'round_robin': True}
 
                 for stress_cmd in prepare_write_cmd:
-                    params.update({'stress_cmd': stress_cmd})
+                    params['stress_cmd'] = stress_cmd
                     # Run all stress commands
-                    params.update(dict(stats_aggregate_cmds=False))
-                    self.log.debug('RUNNING stress cmd: {}'.format(stress_cmd))
+                    params |= dict(stats_aggregate_cmds=False)
+                    self.log.debug(f'RUNNING stress cmd: {stress_cmd}')
                     stress_queue.append(self.run_stress_thread(**params))
-            # One stress cmd command
             else:
                 stress_queue.append(self.run_stress_thread(stress_cmd=prepare_write_cmd, stress_num=1,
                                                            prefix='preload-', stats_aggregate_cmds=False))
@@ -216,7 +215,11 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
             self.db_cluster.start_nemesis(interval=interval)
         results = self.get_stress_results(queue=stress_queue)
         self.update_test_details()
-        self.display_results(results, test_name='test_latency' if not nemesis else 'test_latency_with_nemesis')
+        self.display_results(
+            results,
+            test_name='test_latency_with_nemesis' if nemesis else 'test_latency',
+        )
+
         self.check_regression()
 
     def run_write_workload(self, nemesis=False):
@@ -263,8 +266,15 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
             self._stop_load_after_one_nemesis_cycle()
         results = self.get_stress_results(queue=stress_queue)
         self.update_test_details(scrap_metrics_step=60)
-        self.display_results(results, test_name='test_latency' if not nemesis else 'test_latency_with_nemesis')
-        check_latency = self.check_regression if not nemesis else self.check_latency_during_ops
+        self.display_results(
+            results,
+            test_name='test_latency_with_nemesis' if nemesis else 'test_latency',
+        )
+
+        check_latency = (
+            self.check_latency_during_ops if nemesis else self.check_regression
+        )
+
         check_latency()
 
     def prepare_mv(self, on_populated=False):
@@ -278,7 +288,7 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
                 self.truncate_cf(ks_name, base_table_name, session)
 
             # Create materialized view
-            view_name = base_table_name + '_mv'
+            view_name = f'{base_table_name}_mv'
             self.log.debug('Create materialized view: {0}.{1}'.format(ks_name, view_name))
             self.create_materialized_view(ks_name, base_table_name, view_name, ['"C0"'], ['key'], session,
                                           mv_columns=['"C0"', 'key'])
@@ -294,25 +304,39 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
         2. Create materialized view
         3. Run a write workload
         """
-        test_name = 'test_write_with_mv_{}populated'.format('' if on_populated else 'not_')
+        test_name = f"test_write_with_mv_{'' if on_populated else 'not_'}populated"
         base_cmd_w = self.params.get('stress_cmd_w')
 
         # Run a write workload without MV
-        ops_without_mv = self._workload(stress_cmd=base_cmd_w, stress_num=2, sub_type='write_without_mv',
-                                        test_name=test_name, keyspace_num=1,
-                                        debug_message='First write cassandra-stress command: {}'.format(base_cmd_w))
+        ops_without_mv = self._workload(
+            stress_cmd=base_cmd_w,
+            stress_num=2,
+            sub_type='write_without_mv',
+            test_name=test_name,
+            keyspace_num=1,
+            debug_message=f'First write cassandra-stress command: {base_cmd_w}',
+        )
+
 
         # Create MV
         self.prepare_mv(on_populated=on_populated)
 
         # Start cassandra-stress writes again now with MV
-        ops_with_mv = self._workload(stress_cmd=base_cmd_w, stress_num=2, sub_type='write_with_mv',
-                                     test_name=test_name, keyspace_num=1,
-                                     debug_message='Second write cassandra-stress command: {}'.format(base_cmd_w))
+        ops_with_mv = self._workload(
+            stress_cmd=base_cmd_w,
+            stress_num=2,
+            sub_type='write_with_mv',
+            test_name=test_name,
+            keyspace_num=1,
+            debug_message=f'Second write cassandra-stress command: {base_cmd_w}',
+        )
 
-        self.assert_mv_performance(ops_without_mv, ops_with_mv,
-                                   'Throughput of run with materialized view is more than {} times lower then '
-                                   'throughput of run without materialized view'.format(self.ops_threshold_prc/100))
+
+        self.assert_mv_performance(
+            ops_without_mv,
+            ops_with_mv,
+            f'Throughput of run with materialized view is more than {self.ops_threshold_prc / 100} times lower then throughput of run without materialized view',
+        )
 
     def _read_with_mv(self, on_populated):
         """
@@ -323,38 +347,66 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
         3. Create MV
         4. Run a read workload again
         """
-        test_name = 'test_read_with_mv_{}populated'.format('' if on_populated else 'not_')
+        test_name = f"test_read_with_mv_{'' if on_populated else 'not_'}populated"
         base_cmd_p = self.params.get('prepare_write_cmd')
         base_cmd_w = self.params.get('stress_cmd_w')
         base_cmd_r = self.params.get('stress_cmd_r')
 
         self.create_test_stats()
         # prepare schema and data before read
-        self._workload(stress_cmd=base_cmd_p, stress_num=2, test_name=test_name, prefix='preload-', keyspace_num=1,
-                       debug_message='Prepare the test, run cassandra-stress command: {}'.format(base_cmd_p),
-                       save_stats=False)
+        self._workload(
+            stress_cmd=base_cmd_p,
+            stress_num=2,
+            test_name=test_name,
+            prefix='preload-',
+            keyspace_num=1,
+            debug_message=f'Prepare the test, run cassandra-stress command: {base_cmd_p}',
+            save_stats=False,
+        )
+
 
         # run a read workload
-        ops_without_mv = self._workload(stress_cmd=base_cmd_r, stress_num=2, sub_type='read_without_mv',
-                                        test_name=test_name, keyspace_num=1,
-                                        debug_message='First read cassandra-stress command: {}'.format(base_cmd_r))
+        ops_without_mv = self._workload(
+            stress_cmd=base_cmd_r,
+            stress_num=2,
+            sub_type='read_without_mv',
+            test_name=test_name,
+            keyspace_num=1,
+            debug_message=f'First read cassandra-stress command: {base_cmd_r}',
+        )
+
 
         self.prepare_mv(on_populated=on_populated)
 
         # If the MV was created on the empty base table, populate it before reads
         if not on_populated:
-            self._workload(stress_cmd=base_cmd_w, stress_num=2, test_name=test_name, prefix='preload-', keyspace_num=1,
-                           debug_message='Prepare test before second cassandra-stress command: {}'.format(base_cmd_w),
-                           save_stats=False)
+            self._workload(
+                stress_cmd=base_cmd_w,
+                stress_num=2,
+                test_name=test_name,
+                prefix='preload-',
+                keyspace_num=1,
+                debug_message=f'Prepare test before second cassandra-stress command: {base_cmd_w}',
+                save_stats=False,
+            )
+
 
         # run a read workload
-        ops_with_mv = self._workload(stress_cmd=base_cmd_r, stress_num=2, sub_type='read_with_mv',
-                                     test_name=test_name, keyspace_num=1,
-                                     debug_message='Second read cassandra-stress command: {}'.format(base_cmd_r))
+        ops_with_mv = self._workload(
+            stress_cmd=base_cmd_r,
+            stress_num=2,
+            sub_type='read_with_mv',
+            test_name=test_name,
+            keyspace_num=1,
+            debug_message=f'Second read cassandra-stress command: {base_cmd_r}',
+        )
 
-        self.assert_mv_performance(ops_without_mv, ops_with_mv,
-                                   'Throughput of run with materialized view is more than {} times lower then '
-                                   'throughput of run without materialized view'.format(self.ops_threshold_prc/100))
+
+        self.assert_mv_performance(
+            ops_without_mv,
+            ops_with_mv,
+            f'Throughput of run with materialized view is more than {self.ops_threshold_prc / 100} times lower then throughput of run without materialized view',
+        )
 
     def _mixed_with_mv(self, on_populated):
         """
@@ -363,33 +415,52 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
         1. Run a write workload as a preparation
         2. Run a mixed workload
         """
-        test_name = 'test_mixed_with_mv_{}populated'.format('' if on_populated else 'not_')
+        test_name = f"test_mixed_with_mv_{'' if on_populated else 'not_'}populated"
         base_cmd_p = self.params.get('prepare_write_cmd')
         base_cmd_m = self.params.get('stress_cmd_m')
 
         self.create_test_stats()
         # run a write workload as a preparation
-        self._workload(stress_cmd=base_cmd_p, stress_num=2, test_name=test_name, keyspace_num=1, prefix='preload-',
-                       debug_message='Prepare the test, run cassandra-stress command: {}'.format(base_cmd_p),
-                       save_stats=False)
+        self._workload(
+            stress_cmd=base_cmd_p,
+            stress_num=2,
+            test_name=test_name,
+            keyspace_num=1,
+            prefix='preload-',
+            debug_message=f'Prepare the test, run cassandra-stress command: {base_cmd_p}',
+            save_stats=False,
+        )
+
 
         # run a mixed workload without MV
-        ops_without_mv = self._workload(stress_cmd=base_cmd_m, stress_num=2, sub_type='mixed_without_mv',
-                                        test_name=test_name, keyspace_num=1,
-                                        debug_message='First mixed cassandra-stress command: {}'.format(base_cmd_m))
+        ops_without_mv = self._workload(
+            stress_cmd=base_cmd_m,
+            stress_num=2,
+            sub_type='mixed_without_mv',
+            test_name=test_name,
+            keyspace_num=1,
+            debug_message=f'First mixed cassandra-stress command: {base_cmd_m}',
+        )
+
 
         self.prepare_mv(on_populated=on_populated)
 
         # run a mixed workload with MV
-        ops_with_mv = self._workload(stress_cmd=base_cmd_p, stress_num=2, sub_type='mixed_with_mv',
-                                     test_name=test_name, keyspace_num=1,
-                                     debug_message='Second start of mixed cassandra-stress command: {}'.format(
-                                         base_cmd_p))
+        ops_with_mv = self._workload(
+            stress_cmd=base_cmd_p,
+            stress_num=2,
+            sub_type='mixed_with_mv',
+            test_name=test_name,
+            keyspace_num=1,
+            debug_message=f'Second start of mixed cassandra-stress command: {base_cmd_p}',
+        )
 
-        self.assert_mv_performance(ops_without_mv, ops_with_mv,
-                                   'Throughput of stress run with materialized view is more than {} times lower then '
-                                   'throughput of stress run without materialized view'.format(
-                                       self.ops_threshold_prc / 100))
+
+        self.assert_mv_performance(
+            ops_without_mv,
+            ops_with_mv,
+            f'Throughput of stress run with materialized view is more than {self.ops_threshold_prc / 100} times lower then throughput of stress run without materialized view',
+        )
 
     def assert_mv_performance(self, ops_without_mv, ops_with_mv, failure_message):
         self.log.debug('Performance results. Ops without MV: {0}; Ops with MV: {1}'.format(ops_without_mv, ops_with_mv))
@@ -554,16 +625,16 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
         5. Drop MV
         """
         def run_workload(stress_cmd, user_profile):
-            self.log.debug('Run stress test with user profile {}'.format(user_profile))
-            assert os.path.exists(user_profile), 'File not found: {}'.format(user_profile)
-            self.log.debug('Stress cmd: {}'.format(stress_cmd))
+            self.log.debug(f'Run stress test with user profile {user_profile}')
+            assert os.path.exists(user_profile), f'File not found: {user_profile}'
+            self.log.debug(f'Stress cmd: {stress_cmd}')
             stress_queue = self.run_stress_thread(stress_cmd=stress_cmd, stress_num=1, profile=user_profile,
                                                   stats_aggregate_cmds=False)
             results = self.get_stress_results(queue=stress_queue)
             self.update_test_details(scylla_conf=True)
             self.display_results(results, test_name=test_name)
             self.check_regression()
-            self.log.debug('Finish stress test with user profile {}'.format(user_profile))
+            self.log.debug(f'Finish stress test with user profile {user_profile}')
 
         def get_mv_name(user_profile):
 
@@ -571,12 +642,14 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
 
             with open(user_profile, encoding="utf-8") as fobj:
                 user_profile_yaml = yaml.safe_load(fobj)
-            mv_name = ''
-
-            for k in user_profile_yaml:
-                if isinstance(k, tuple) and k[0] == 'extra_definitions':
-                    mv_name = k[1][0].split(' AS')[0].split(' ')[-1]
-                    break
+            mv_name = next(
+                (
+                    k[1][0].split(' AS')[0].split(' ')[-1]
+                    for k in user_profile_yaml
+                    if isinstance(k, tuple) and k[0] == 'extra_definitions'
+                ),
+                '',
+            )
 
             if not mv_name:
                 assert False, 'Failed to recognoze materialized view name from {0}: {1}'.format(
@@ -586,18 +659,18 @@ class PerformanceRegressionTest(ClusterTester):  # pylint: disable=too-many-publ
 
         def drop_mv(mv_name):
             # drop MV
-            self.log.debug('Start dropping materialized view {}'.format(mv_name))
-            query = 'drop materialized view {}'.format(mv_name)
+            self.log.debug(f'Start dropping materialized view {mv_name}')
+            query = f'drop materialized view {mv_name}'
 
             try:
                 with self.db_cluster.cql_connection_patient_exclusive(self.db_cluster.nodes[0]) as session:
-                    self.log.debug('Run query: {}'.format(query))
+                    self.log.debug(f'Run query: {query}')
                     session.execute(query)
             except Exception as ex:
                 self.log.debug('Failed to drop materialized view using query {0}. Error: {1}'.format(query, str(ex)))
                 raise
 
-            self.log.debug('Finish dropping materialized view {}'.format(mv_name))
+            self.log.debug(f'Finish dropping materialized view {mv_name}')
 
         test_name = 'test_mv_write'
         duration = self.params.get('test_duration')

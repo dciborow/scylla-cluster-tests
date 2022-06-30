@@ -117,7 +117,7 @@ def install_callback(ctx, _, value):
     if not value or ctx.resilient_parsing:
         return value
     shell, path = click_completion.core.install()
-    click.echo('%s completion installed in %s' % (shell, path))
+    click.echo(f'{shell} completion installed in {path}')
     return sys.exit(0)
 
 
@@ -347,9 +347,9 @@ def list_resources(ctx, user, test_id, get_all, get_all_running, verbose):
         table_header = ["Name", "Region-AZ", "State", "TestId", "RunByUser", "LaunchTime"]
 
     click.secho("Checking AWS EC2...", fg='green')
-    aws_instances = list_instances_aws(tags_dict=params, running=get_all_running, verbose=verbose)
-
-    if aws_instances:
+    if aws_instances := list_instances_aws(
+        tags_dict=params, running=get_all_running, verbose=verbose
+    ):
         aws_table = PrettyTable(table_header)
         aws_table.align = "l"
         aws_table.sortby = 'LaunchTime'
@@ -370,8 +370,9 @@ def list_resources(ctx, user, test_id, get_all, get_all_running, verbose):
         click.secho("Nothing found for selected filters in AWS!", fg="yellow")
 
     click.secho("Checking AWS Elastic IPs...", fg='green')
-    elastic_ips_aws = list_elastic_ips_aws(tags_dict=params, verbose=verbose)
-    if elastic_ips_aws:
+    if elastic_ips_aws := list_elastic_ips_aws(
+        tags_dict=params, verbose=verbose
+    ):
         aws_table = PrettyTable(["AllocationId", "PublicIP", "TestId", "RunByUser", "InstanceId (attached to)"])
         aws_table.align = "l"
         aws_table.sortby = 'AllocationId'
@@ -390,8 +391,7 @@ def list_resources(ctx, user, test_id, get_all, get_all_running, verbose):
         click.secho("No elastic ips found for selected filters in AWS!", fg="yellow")
 
     click.secho("Checking GKE...", fg='green')
-    gke_clusters = list_clusters_gke(tags_dict=params, verbose=verbose)
-    if gke_clusters:
+    if gke_clusters := list_clusters_gke(tags_dict=params, verbose=verbose):
         gke_table = PrettyTable(["Name", "Region-AZ", "TestId", "RunByUser", "CreateTime"])
         gke_table.align = "l"
         gke_table.sortby = 'CreateTime'
@@ -408,8 +408,9 @@ def list_resources(ctx, user, test_id, get_all, get_all_running, verbose):
         click.secho("Nothing found for selected filters in GKE!", fg="yellow")
 
     click.secho("Checking GCE...", fg='green')
-    gce_instances = list_instances_gce(tags_dict=params, running=get_all_running, verbose=verbose)
-    if gce_instances:
+    if gce_instances := list_instances_gce(
+        tags_dict=params, running=get_all_running, verbose=verbose
+    ):
         gce_table = PrettyTable(table_header)
         gce_table.align = "l"
         gce_table.sortby = 'LaunchTime'
@@ -428,8 +429,7 @@ def list_resources(ctx, user, test_id, get_all, get_all_running, verbose):
         click.secho("Nothing found for selected filters in GCE!", fg="yellow")
 
     click.secho("Checking EKS...", fg='green')
-    eks_clusters = list_clusters_eks(tags_dict=params, verbose=verbose)
-    if eks_clusters:
+    if eks_clusters := list_clusters_eks(tags_dict=params, verbose=verbose):
         eks_table = PrettyTable(["Name", "TestId", "Region", "RunByUser", "CreateTime"])
         eks_table.align = "l"
         eks_table.sortby = 'CreateTime'
@@ -577,7 +577,7 @@ def list_gce_images_branch(version):
 def list_repos(dist_type, dist_version):
     add_file_logger()
 
-    if not dist_type == 'centos' and dist_version is None:
+    if dist_type != 'centos' and dist_version is None:
         click.secho("when passing --dist-type=debian/ubuntu need to pass --dist-version as well", fg='red')
         sys.exit(1)
 
@@ -600,7 +600,7 @@ def list_repos(dist_type, dist_version):
 @click.option('-d', '--linux-distro', type=str,
               default='centos', help='Linux Distribution type')
 @click.option('-o', '--only-print-versions', type=bool, default=False, required=False, help='')
-def get_scylla_base_versions(scylla_version, scylla_repo, linux_distro, only_print_versions):  # pylint: disable=too-many-locals
+def get_scylla_base_versions(scylla_version, scylla_repo, linux_distro, only_print_versions):    # pylint: disable=too-many-locals
     """
     Upgrade test try to upgrade from multiple supported base versions, this command is used to
     get the base versions according to the scylla repo and distro type, then we don't need to hardcode
@@ -610,7 +610,10 @@ def get_scylla_base_versions(scylla_version, scylla_repo, linux_distro, only_pri
 
     version_detector = UpgradeBaseVersion(scylla_repo, linux_distro, scylla_version)
 
-    if not version_detector.dist_type == 'centos' and version_detector.dist_version is None:
+    if (
+        version_detector.dist_type != 'centos'
+        and version_detector.dist_version is None
+    ):
         click.secho("when passing --dist-type=debian/ubuntu need to pass --dist-version as well", fg='red')
         sys.exit(1)
 
@@ -649,9 +652,8 @@ def output_conf(config_files, backend):
 
 
 def _run_yaml_test(backend, full_path, env):
-    output = []
     error = False
-    output.append(f'---- linting: {full_path} -----')
+    output = [f'---- linting: {full_path} -----']
     while os.environ:
         os.environ.popitem()
     for key, value in env.items():
@@ -801,7 +803,12 @@ def show_log(test_id, output_format):
         table.align = "l"
         for log in files:
             table.add_row([log["date"].strftime("%Y%m%d_%H%M%S"), log["type"], log["link"]])
-        click.echo(table.get_string(title="Log links for testrun with test id {}".format(test_id)))
+        click.echo(
+            table.get_string(
+                title=f"Log links for testrun with test id {test_id}"
+            )
+        )
+
     elif output_format == 'markdown':
         click.echo("\n## Logs\n")
         for log in files:
@@ -815,7 +822,10 @@ def show_log(test_id, output_format):
 def show_monitor(test_id, date_time, kill):
     add_file_logger()
 
-    click.echo('Search monitoring stack archive files for test id {} and restoring...'.format(test_id))
+    click.echo(
+        f'Search monitoring stack archive files for test id {test_id} and restoring...'
+    )
+
     try:
         status = restore_monitoring_stack(test_id, date_time)
     except Exception as details:  # pylint: disable=broad-except
@@ -867,7 +877,7 @@ def search_builder(test_id):
     for result in results:
         tbl.add_row([result['builder']['name'], result['builder']['public_ip'], result['path']])
 
-    click.echo(tbl.get_string(title='Found builders for Test-id: {}'.format(test_id)))
+    click.echo(tbl.get_string(title=f'Found builders for Test-id: {test_id}'))
 
 
 @investigate.command('show-events', help='Return content of file events_log/events for running job by test-id')
@@ -911,7 +921,7 @@ cli.add_command(investigate)
 @click.option("-t", "--test", required=False, default="",
               help="Run specific test file from unit-tests directory")
 def unit_tests(test):
-    sys.exit(pytest.main(['-v', '-p', 'no:warnings', 'unit_tests/{}'.format(test)]))
+    sys.exit(pytest.main(['-v', '-p', 'no:warnings', f'unit_tests/{test}']))
 
 
 @cli.command('pre-commit', help="Run pre-commit checkers")
@@ -1040,16 +1050,19 @@ def collect_logs(test_id=None, logdir=None, backend=None, config_file=None):
     for cluster_type, s3_links in collected_logs.items():
         for link in s3_links:
             current_cluster_type = cluster_type
-            # Cover case when archive is created per log file not all logs in one archive.
-            # Here log name is extracted from archive name. For example:
-            # for link https://cloudius-jenkins-test.s3.amazonaws.com/c63a6913-6253-45a0-b5cf-d553f713fe81/20211222_
-            # 101636/warning-c63a6913.log.tar.gz
-            #  current_cluster_type will be "warning"
-            if cluster_type == 'sct-runner' and cluster_type not in link:
+            if (
+                current_cluster_type == 'sct-runner'
+                and current_cluster_type not in link
+            ):
                 current_cluster_type = link.split("/")[-1].split("-")[0]
             table.add_row([current_cluster_type, link])
 
-    click.echo(table.get_string(title="Collected logs by test-id: {}".format(collector.test_id)))
+    click.echo(
+        table.get_string(
+            title=f"Collected logs by test-id: {collector.test_id}"
+        )
+    )
+
 
     if collector.test_id:
         store_logs_in_argus(test_id=UUID(collector.test_id), logs=collected_logs)
@@ -1134,8 +1147,9 @@ def send_email(test_id=None, test_status=None, start_time=None, started_by=None,
                 test_results["username"] = started_by
             if logs:
                 test_results['logs_links'] = logs
-            reporter = build_reporter('TestAborted', email_recipients, testrun_dir)
-            if reporter:
+            if reporter := build_reporter(
+                'TestAborted', email_recipients, testrun_dir
+            ):
                 reporter.send_report(test_results)
             else:
                 LOGGER.error('failed to get a reporter')

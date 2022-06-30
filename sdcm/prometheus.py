@@ -60,7 +60,7 @@ def start_metrics_server():
         port = httpd.server_port
         ip = get_my_ip()
         LOGGER.info('prometheus API server running on port: %s', port)
-        return '{}:{}'.format(ip, port)
+        return f'{ip}:{port}'
     except Exception as ex:  # pylint: disable=broad-except
         LOGGER.error('Cannot start local http metrics server: %s', ex)
 
@@ -124,7 +124,7 @@ class PrometheusAlertManagerListener(threading.Thread):
     def __init__(self, ip, port=9093, interval=10, stop_flag: threading.Event = None):
         super().__init__(name=self.__class__.__name__, daemon=True)
         self._alert_manager_url = f"http://{ip}:{port}/api/v2"
-        self._stop_flag = stop_flag if stop_flag else threading.Event()
+        self._stop_flag = stop_flag or threading.Event()
         self._interval = interval
         self._timeout = 600
         self.event_registry = ContinuousEventsRegistry()
@@ -225,7 +225,7 @@ class PrometheusAlertManagerListener(threading.Thread):
             self._publish_end_of_alerts(just_left)
             delta = int((start_time + self._interval) - time.time())
             if delta > 0:
-                time.sleep(int(delta))
+                time.sleep(delta)
 
     def silence(self,
                 alert_name: str,

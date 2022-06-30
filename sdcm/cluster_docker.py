@@ -229,7 +229,10 @@ class DockerCluster(cluster.BaseCluster):  # pylint: disable=abstract-method
     def _get_new_node_indexes(self, count):
         """Return `count' indexes which will fill gaps or/and continue existent indexes in `self.nodes' list."""
 
-        return sorted(set(range(len(self.nodes) + count)) - set(node.node_index for node in self.nodes))
+        return sorted(
+            set(range(len(self.nodes) + count))
+            - {node.node_index for node in self.nodes}
+        )
 
     def _create_nodes(self, count, enable_auto_bootstrap=False):
         new_nodes = []
@@ -308,7 +311,7 @@ class ScyllaDockerCluster(cluster.BaseScyllaCluster, DockerCluster):  # pylint: 
 
     @cluster.wait_for_init_wrap
     def wait_for_init(self, node_list=None, verbose=False, timeout=None, check_node_health=True):
-        node_list = node_list if node_list else self.nodes
+        node_list = node_list or self.nodes
         self.wait_for_nodes_up_and_normal(nodes=node_list)
 
     def get_scylla_args(self):
@@ -344,9 +347,11 @@ class LoaderSetDocker(cluster.BaseLoaderSet, DockerCluster):
     def node_setup(self, node, verbose=False, db_node_address=None, **kwargs):
         self.install_gemini(node=node)
 
-        if 'scylla-bench' in self.params.list_of_stress_tools:
-            if not node.is_scylla_bench_installed:
-                node.install_scylla_bench()
+        if (
+            'scylla-bench' in self.params.list_of_stress_tools
+            and not node.is_scylla_bench_installed
+        ):
+            node.install_scylla_bench()
 
         if self.params.get('client_encrypt'):
             node.config_client_encrypt()

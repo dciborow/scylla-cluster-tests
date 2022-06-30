@@ -332,10 +332,15 @@ class OperatorManagerCluster(ManagerCluster):
             timeout=300,
             task_name=so_repair_task.name,
             throw_exc=True)
-        for mgr_task in self.repair_task_list:
-            if mgr_task.id.split("/", 1)[-1] in (so_repair_task_status.name, so_repair_task_status.id):
-                return mgr_task
-        return None
+        return next(
+            (
+                mgr_task
+                for mgr_task in self.repair_task_list
+                if mgr_task.id.split("/", 1)[-1]
+                in (so_repair_task_status.name, so_repair_task_status.id)
+            ),
+            None,
+        )
 
     def get_mgr_backup_task(self, so_backup_task: ScyllaOperatorBackupTask) -> Optional[BackupTask]:
         so_backup_task_status = wait_for(
@@ -345,22 +350,35 @@ class OperatorManagerCluster(ManagerCluster):
             timeout=300,
             task_name=so_backup_task.name,
             throw_exc=True)
-        for mgr_task in self.backup_task_list:
-            if mgr_task.id.split("/", 1)[-1] in (so_backup_task_status.name, so_backup_task_status.id):
-                return mgr_task
-        return None
+        return next(
+            (
+                mgr_task
+                for mgr_task in self.backup_task_list
+                if mgr_task.id.split("/", 1)[-1]
+                in (so_backup_task_status.name, so_backup_task_status.id)
+            ),
+            None,
+        )
 
     def get_operator_repair_task_status(self, task_name: str) -> Optional[ScyllaOperatorRepairTaskStatus]:
-        for task_status in self.operator_repair_task_statuses:
-            if task_status.name == task_name:
-                return task_status
-        return None
+        return next(
+            (
+                task_status
+                for task_status in self.operator_repair_task_statuses
+                if task_status.name == task_name
+            ),
+            None,
+        )
 
     def get_operator_backup_task_status(self, task_name: str) -> Optional[ScyllaOperatorBackupTaskStatus]:
-        for task_status in self.operator_backup_task_statuses:
-            if task_status.name == task_name:
-                return task_status
-        return None
+        return next(
+            (
+                task_status
+                for task_status in self.operator_backup_task_statuses
+                if task_status.name == task_name
+            ),
+            None,
+        )
 
     def _get_list_of_entities_from_operator(self, path, entity_class):
         repair_task_status_infos = self.scylla_cluster.get_scylla_cluster_value(path)

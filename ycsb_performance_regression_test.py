@@ -63,11 +63,12 @@ class BaseYCSBPerformanceRegressionTest(PerformanceRegressionTest):
         ]
 
     def _create_stress_cmd(self, workload: YcsbWorkload):
-        cmd = f"bin/ycsb -jvm-args='-Dorg.slf4j.simpleLogger.defaultLogLevel=OFF' run scylla -s -P workloads/{workload.name}" \
-              f" -p recordcount={self.records_size}" \
-              f" -p operationcount={self.records_size}" \
-              f" {self.params['stress_cmd']}"
-        return cmd
+        return (
+            f"bin/ycsb -jvm-args='-Dorg.slf4j.simpleLogger.defaultLogLevel=OFF' run scylla -s -P workloads/{workload.name}"
+            f" -p recordcount={self.records_size}"
+            f" -p operationcount={self.records_size}"
+            f" {self.params['stress_cmd']}"
+        )
 
     def run_pre_create_keyspace(self):
         with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
@@ -105,7 +106,10 @@ class BaseYCSBPerformanceRegressionTest(PerformanceRegressionTest):
         for workload in self.ycsb_workloads:
             self.wait_no_compactions_running()
             self.run_fstrim_on_all_db_nodes()
-            InfoEvent(message="Starting YCSB %s (%s)" % (workload.name, workload.detailed_name)).publish()
+            InfoEvent(
+                message=f"Starting YCSB {workload.name} ({workload.detailed_name})"
+            ).publish()
+
             self.run_workload(stress_cmd=self._create_stress_cmd(workload), sub_type=workload.sub_type)
 
 

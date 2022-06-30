@@ -26,7 +26,7 @@ def get_distro_name(distro_object):
         Distro.OEL8: "centos8",
         Distro.ROCKY8: "centos8",
     }
-    distro_name = known_distro_dict.get(distro_object, None)
+    distro_name = known_distro_dict.get(distro_object)
     assert distro_name, f"Unfamiliar distribution: {distro_object}"
     return distro_name
 
@@ -99,9 +99,7 @@ class HostSsl(Enum):
 
     @classmethod
     def from_str(cls, output_str):
-        if "SSL" in output_str:
-            return HostSsl.ON
-        return HostSsl.OFF
+        return HostSsl.ON if "SSL" in output_str else HostSsl.OFF
 
 
 class HostStatus(Enum):
@@ -117,7 +115,9 @@ class HostStatus(Enum):
                 return cls.DOWN
             return getattr(cls, output_str)
         except AttributeError as err:
-            raise ScyllaManagerError("Could not recognize returned host status: {}".format(output_str)) from err
+            raise ScyllaManagerError(
+                f"Could not recognize returned host status: {output_str}"
+            ) from err
 
 
 class HostRestStatus(Enum):
@@ -135,7 +135,9 @@ class HostRestStatus(Enum):
                 return cls.DOWN
             return getattr(cls, output_str)
         except AttributeError as err:
-            raise ScyllaManagerError("Could not recognize returned host rest status: {}".format(output_str)) from err
+            raise ScyllaManagerError(
+                f"Could not recognize returned host rest status: {output_str}"
+            ) from err
 
 
 class TaskStatus:  # pylint: disable=too-few-public-methods
@@ -157,8 +159,10 @@ class TaskStatus:  # pylint: disable=too-few-public-methods
             output_str = output_str.upper()
             return getattr(cls, output_str)
         except AttributeError as err:
-            raise ScyllaManagerError("Could not recognize returned task status: {}".format(output_str)) from err
+            raise ScyllaManagerError(
+                f"Could not recognize returned task status: {output_str}"
+            ) from err
 
     @classmethod
     def all_statuses(cls):
-        return set(getattr(cls, name) for name in dir(cls) if name.isupper())
+        return {getattr(cls, name) for name in dir(cls) if name.isupper()}

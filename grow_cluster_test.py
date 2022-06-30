@@ -150,8 +150,7 @@ class GrowClusterTest(ClusterTester):
         while duration <= self._duration:
             time.sleep(wait_interval)
             node_cnt = len(self.db_cluster.nodes)
-            max_add_cnt = max_random_cnt if max_random_cnt <= self._cluster_target_size - node_cnt else\
-                self._cluster_target_size - node_cnt
+            max_add_cnt = min(max_random_cnt, self._cluster_target_size - node_cnt)
             if max_add_cnt >= 1:
                 add_cnt = random.randint(1, max_add_cnt)
                 self.log.info('Add %s nodes to cluster', add_cnt)

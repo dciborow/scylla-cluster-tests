@@ -188,10 +188,7 @@ class silence:  # pylint: disable=invalid-name
 
     def __call__(self, funct):
         def decor(*args, **kwargs):
-            if self.name is None:
-                name = funct.__name__
-            else:
-                name = self.name
+            name = funct.__name__ if self.name is None else self.name
             result = None
             try:
                 self.log.debug("Silently running '%s'", name)
@@ -270,8 +267,7 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
         self.start_time = time.time()
         self.teardown_started = False
         self._init_params()
-        reuse_cluster_id = self.params.get('reuse_cluster')
-        if reuse_cluster_id:
+        if reuse_cluster_id := self.params.get('reuse_cluster'):
             self.test_config.reuse_cluster(True)
             self.test_config.set_test_id(reuse_cluster_id)
         else:
@@ -564,7 +560,11 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
         :return:
         """
         n_db_nodes = str(self.params.get('n_db_nodes'))
-        return min([int(nodes_num) for nodes_num in n_db_nodes.split() if int(nodes_num) > 0])
+        return min(
+            int(nodes_num)
+            for nodes_num in n_db_nodes.split()
+            if int(nodes_num) > 0
+        )
 
     @property
     def test_id(self):
@@ -673,7 +673,7 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
         if self.db_cluster and not self.db_clusters_multitenant:
             self.db_clusters_multitenant = [self.db_cluster]
         for db_cluster in self.db_clusters_multitenant:
-            if not (db_cluster and db_cluster.nodes):
+            if not db_cluster or not db_cluster.nodes:
                 continue
             if self.params.get('use_legacy_cluster_init'):
                 self.legacy_init_nodes(db_cluster=db_cluster)
@@ -728,10 +728,12 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
         # cancel reuse cluster - for new nodes added during the test
         self.test_config.reuse_cluster(False)
 
-        for monitors in self.monitors_multitenant:
-            if monitors and monitors.nodes:
-                self.prometheus_db_multitenant.append(
-                    PrometheusDBStats(host=monitors.nodes[0].public_ip_address))
+        self.prometheus_db_multitenant.extend(
+            PrometheusDBStats(host=monitors.nodes[0].public_ip_address)
+            for monitors in self.monitors_multitenant
+            if monitors and monitors.nodes
+        )
+
         self.prometheus_db = (self.prometheus_db_multitenant or [None])[0]
 
         self.start_time = time.time()
@@ -756,7 +758,7 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
             self.log.info('change RF of system_auth to %s', system_auth_rf)
             node = db_cluster.nodes[0]
             credentials = db_cluster.get_db_auth()
-            username, password = credentials if credentials else (None, None)
+            username, password = credentials or (None, None)
             with db_cluster.cql_connection_patient(node, user=username, password=password) as session:
                 session.execute("ALTER KEYSPACE system_auth WITH replication = "
                                 "{'class': 'org.apache.cassandra.locator.SimpleStrategy', "
@@ -799,7 +801,10 @@ class ClusterTester(db_stats.TestStatsMixin, unittest.TestCase):  # pylint: disa
             except ValueError:
                 nemesis_name = klass.split(':')[0]
                 num = 1
-            nemesis_threads.append({'nemesis': getattr(nemesis, nemesis_name), 'num_threads': int(num)})
+            nemesis_threads.append(
+                {'nemesis': getattr(nemesis, nemesis_name), 'num_threads': num}
+            )
+
 
         return nemesis_threads
 

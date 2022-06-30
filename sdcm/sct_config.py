@@ -85,7 +85,7 @@ def int_or_list(value):
         except Exception:  # pylint: disable=broad-except
             pass
 
-    raise ValueError("{} isn't int or list".format(value))
+    raise ValueError(f"{value} isn't int or list")
 
 
 def boolean(value):
@@ -94,7 +94,7 @@ def boolean(value):
     elif isinstance(value, str):
         return bool(strtobool(value))
     else:
-        raise ValueError("{} isn't a boolean".format(type(value)))
+        raise ValueError(f"{type(value)} isn't a boolean")
 
 
 class SCTConfiguration(dict):
@@ -1442,7 +1442,7 @@ class SCTConfiguration(dict):
                     if key not in self.keys():
                         self[key] = value
                     elif len(self[key].split()) < len(region_names):
-                        self[key] += " {}".format(value)
+                        self[key] += f" {value}"
 
         # 3) overwrite with environment variables
         anyconfig.merge(self, env)
@@ -1461,7 +1461,7 @@ class SCTConfiguration(dict):
                         if key not in self.keys():
                             self[key] = value
                         else:
-                            self[key] += " {}".format(value)
+                            self[key] += f" {value}"
 
         # 6) handle scylla_version if exists
         scylla_linux_distro = self.get('scylla_linux_distro')
@@ -1539,29 +1539,29 @@ class SCTConfiguration(dict):
         if (oracle_scylla_version := self.get('oracle_scylla_version')) \
            and self.get("db_type") == "mixed_scylla":  # pylint: disable=too-many-nested-blocks
             suffix = f" {oracle_scylla_version}"  # ami.name format example: ScyllaDB 4.4.0
-            if not self.get('ami_id_db_oracle') and self.get('cluster_backend') == 'aws':
-                aws_arch = get_arch_from_instance_type(self.get('instance_type_db'))
-                ami_list = []
-                for region in region_names:
-                    if ':' in oracle_scylla_version:
-                        ami = get_branched_ami(
-                            scylla_version=oracle_scylla_version, region_name=region, arch=aws_arch)[0]
-                    else:
-                        for ami in get_scylla_ami_versions(region_name=region, arch=aws_arch):
-                            if ami.name.endswith(suffix):
-                                break
-                        else:
-                            raise ValueError(f"AMIs for {oracle_scylla_version=} not found in {region}")
-                    self.log.debug("Found AMI %s for oracle_scylla_version='%s' in %s",
-                                   ami.image_id, oracle_scylla_version, region)
-                    ami_list.append(ami)
-                self["ami_id_db_oracle"] = " ".join(ami.image_id for ami in ami_list)
-            else:
+            if (
+                self.get('ami_id_db_oracle')
+                or self.get('cluster_backend') != 'aws'
+            ):
                 raise ValueError("'oracle_scylla_version' and 'ami_id_db_oracle' can't used together")
 
-        # 7) support lookup of repos for upgrade test
-        new_scylla_version = self.get('new_version')
-        if new_scylla_version:
+            aws_arch = get_arch_from_instance_type(self.get('instance_type_db'))
+            ami_list = []
+            for region in region_names:
+                if ':' in oracle_scylla_version:
+                    ami = get_branched_ami(
+                        scylla_version=oracle_scylla_version, region_name=region, arch=aws_arch)[0]
+                else:
+                    for ami in get_scylla_ami_versions(region_name=region, arch=aws_arch):
+                        if ami.name.endswith(suffix):
+                            break
+                    else:
+                        raise ValueError(f"AMIs for {oracle_scylla_version=} not found in {region}")
+                self.log.debug("Found AMI %s for oracle_scylla_version='%s' in %s",
+                               ami.image_id, oracle_scylla_version, region)
+                ami_list.append(ami)
+            self["ami_id_db_oracle"] = " ".join(ami.image_id for ami in ami_list)
+        if new_scylla_version := self.get('new_version'):
             if not self.get('ami_id_db_scylla') and cluster_backend == 'aws':  # pylint: disable=no-else-raise
                 raise ValueError("'new_version' isn't supported for AWS AMIs")
 
@@ -1575,12 +1575,11 @@ class SCTConfiguration(dict):
 
         # 9) append username or ami_id_db_scylla_desc to the user_prefix
         version_tag = self.get('ami_id_db_scylla_desc')
-        user_prefix = self.get('user_prefix')
-        if user_prefix:
+        if user_prefix := self.get('user_prefix'):
             if not version_tag:
                 version_tag = getpass.getuser()
 
-            self['user_prefix'] = "{}-{}".format(user_prefix, version_tag)[:35]
+            self['user_prefix'] = f"{user_prefix}-{version_tag}"[:35]
 
         # 11) validate that supported instance_provision selected
         if self.get('instance_provision') not in ['spot', 'on_demand', 'spot_fleet', 'spot_low_price', 'spot_duration']:
@@ -1588,8 +1587,7 @@ class SCTConfiguration(dict):
 
         # 12) spot_duration instance can be created for test duration
         if self.get('instance_provision').lower() == "spot_duration":
-            test_duration = self.get('test_duration')
-            if test_duration:
+            if test_duration := self.get('test_duration'):
                 assert test_duration <= MAX_SPOT_DURATION_TIME, \
                     f'Test duration too long for spot_duration instance type. ' \
                     f'Max possible test duration time for this instance type is {MAX_SPOT_DURATION_TIME} minutes'
@@ -1598,7 +1596,7 @@ class SCTConfiguration(dict):
         if self.get('authenticator') and self.get('authenticator') == "PasswordAuthenticator":
             authenticator_user = self.get("authenticator_user")
             authenticator_password = self.get("authenticator_password")
-            if not (authenticator_password and authenticator_user):
+            if not authenticator_password or not authenticator_user:
                 raise ValueError("For PasswordAuthenticator authenticator authenticator_user and authenticator_password"
                                  " have to be provided")
 
@@ -1646,7 +1644,9 @@ class SCTConfiguration(dict):
                     environment_vars[opt['name']] = opt['type'](os.environ[opt['env']])
                 except Exception as ex:  # pylint: disable=broad-except
                     raise ValueError(
-                        "failed to parse {} from environment variable".format(opt['env'])) from ex
+                        f"failed to parse {opt['env']} from environment variable"
+                    ) from ex
+
         return environment_vars
 
     def _update_environment_variables(self, replace=False):
@@ -1670,11 +1670,12 @@ class SCTConfiguration(dict):
         try:
             opt['type'](self.get(opt['name']))
         except Exception as ex:  # pylint: disable=broad-except
-            raise ValueError("failed to validate {}".format(opt['name'])) from ex
-        choices = opt.get('choices')
-        if choices:
+            raise ValueError(f"failed to validate {opt['name']}") from ex
+        if choices := opt.get('choices'):
             cur_val = self.get(opt['name'])
-            assert cur_val in choices, "failed to validate '{}': {} not in {}".format(opt['name'], cur_val, choices)
+            assert (
+                cur_val in choices
+            ), f"failed to validate '{opt['name']}': {cur_val} not in {choices}"
 
     @property
     def list_of_stress_tools(self) -> Set[str]:

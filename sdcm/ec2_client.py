@@ -89,9 +89,9 @@ class EC2ClientWrapper():
         if block_device_mappings:
             params['LaunchSpecification']['BlockDeviceMappings'] = block_device_mappings
         if not duration:
-            params.update({'AvailabilityZoneGroup': region_name})
+            params['AvailabilityZoneGroup'] = region_name
         else:
-            params.update({'BlockDurationMinutes': int(duration)})
+            params['BlockDurationMinutes'] = int(duration)
         if key_pair:
             params['LaunchSpecification'].update({'KeyName': key_pair})
         if user_data:
@@ -237,8 +237,7 @@ class EC2ClientWrapper():
         :param instance_id: instance id
         :return: EC2.Instance object
         """
-        instance = self._resource.Instance(id=instance_id)
-        return instance
+        return self._resource.Instance(id=instance_id)
 
     @retrying(n=5, sleep_time=10, allowed_exceptions=(ClientError,),
               message="Waiting for instance is available")
@@ -283,16 +282,15 @@ class EC2ClientWrapper():
         instance_ids, resp = self._wait_for_request_done(request_ids)
 
         if not instance_ids:
-            raise CreateSpotInstancesError("Failed to get spot instances: %s" % resp)
+            raise CreateSpotInstancesError(f"Failed to get spot instances: {resp}")
 
         LOGGER.info('Spot instances: %s', instance_ids)
         for ind, instance_id in enumerate(instance_ids):
-            self.add_tags(instance_id, {'Name': 'spot_{}_{}'.format(instance_id, ind)})
+            self.add_tags(instance_id, {'Name': f'spot_{instance_id}_{ind}'})
 
         self._client.cancel_spot_instance_requests(SpotInstanceRequestIds=request_ids)
 
-        instances = [self.get_instance(instance_id) for instance_id in instance_ids]
-        return instances
+        return [self.get_instance(instance_id) for instance_id in instance_ids]
 
     def create_spot_fleet(self, instance_type, image_id, region_name, network_if, key_pair='', user_data='', count=3,  # pylint: disable=too-many-arguments
                           block_device_mappings=None, aws_instance_profile=None):
@@ -324,12 +322,11 @@ class EC2ClientWrapper():
 
         LOGGER.info('Spot instances: %s', instance_ids)
         for ind, instance_id in enumerate(instance_ids):
-            self.add_tags(instance_id, {'Name': 'spot_fleet_{}_{}'.format(instance_id, ind)})
+            self.add_tags(instance_id, {'Name': f'spot_fleet_{instance_id}_{ind}'})
 
         self._client.cancel_spot_fleet_requests(SpotFleetRequestIds=[request_id], TerminateInstances=False)
 
-        instances = [self.get_instance(instance_id) for instance_id in instance_ids]
-        return instances
+        return [self.get_instance(instance_id) for instance_id in instance_ids]
 
     def terminate_instances(self, instance_ids):
         """
@@ -352,6 +349,9 @@ class EC2ClientWrapper():
              'Values': [private_ip]}
         ])
         if not instances['Reservations']:
-            raise GetInstanceByPrivateIpError("Cannot find instance by private ip: %s" % private_ip)
+            raise GetInstanceByPrivateIpError(
+                f"Cannot find instance by private ip: {private_ip}"
+            )
+
 
         return self.get_instance(instances['Reservations'][0]['Instances'][0]['InstanceId'])

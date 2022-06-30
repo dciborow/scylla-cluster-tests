@@ -92,7 +92,7 @@ class CDCReplicationTest(ClusterTester):
         self.test_replication(False, Mode.DELTA)
 
     def test_replication_gemini(self, mode: Mode) -> None:
-        self.log.info('Using gemini to generate workload. Mode: {}'.format(mode.name))
+        self.log.info(f'Using gemini to generate workload. Mode: {mode.name}')
         self.test_replication(True, mode)
 
     def test_replication_gemini_delta(self) -> None:
@@ -174,14 +174,14 @@ class CDCReplicationTest(ClusterTester):
         # One more round would cause the nodes to run out of disk space.
         no_rounds = 9
         for rnd in range(no_rounds):
-            self.log.info('Starting round {}'.format(rnd))
+            self.log.info(f'Starting round {rnd}')
 
             self.log.info('Starting nemesis')
             self.db_cluster.start_nemesis()
 
             self.log.info('Waiting for workload generation to finish (~30 minutes)...')
             stress_results = self.verify_gemini_results(queue=stress_thread)
-            self.log.info('gemini results: {}'.format(stress_results))
+            self.log.info(f'gemini results: {stress_results}')
 
             self.log.info('Waiting for replicator to finish (sleeping 180s)...')
             time.sleep(180)
@@ -279,10 +279,10 @@ class CDCReplicationTest(ClusterTester):
         self.log.info('Waiting for stressor to finish...')
         if is_gemini_test:
             stress_results = self.verify_gemini_results(queue=stress_thread)
-            self.log.info('gemini results: {}'.format(stress_results))
+            self.log.info(f'gemini results: {stress_results}')
         else:
             stress_results = stress_thread.get_results()
-            self.log.info('cassandra-stress results: {}'.format(list(stress_results)))
+            self.log.info(f'cassandra-stress results: {list(stress_results)}')
 
         self.log.info('Waiting for replicator to finish (sleeping 60s)...')
         time.sleep(60)
@@ -301,7 +301,7 @@ class CDCReplicationTest(ClusterTester):
         migrate_ok = True
         if mode == Mode.PREIMAGE:
             with open(replicator_log_path, encoding="utf-8") as file:
-                self.consistency_ok = not 'Inconsistency detected.\n' in (line for line in file)
+                self.consistency_ok = 'Inconsistency detected.\n' not in iter(file)
         else:
             migrate_log_path = os.path.join(self.logdir, 'scylla-migrate.log')
             (migrate_ok, consistency_ok) = self.check_consistency(migrate_log_path,
@@ -321,19 +321,17 @@ class CDCReplicationTest(ClusterTester):
     def check_consistency(self, migrate_log_dst_path: str, compare_timestamps: bool = True) -> Tuple[bool, bool]:
         loader_node = self.loaders.nodes[0]
         self.log.info('Comparing table contents using scylla-migrate...')
-        res = loader_node.remoter.run(cmd='./scylla-migrate check --master-address {} --replica-address {}'
-                                      ' --ignore-schema-difference {} {}.{} 2>&1 | tee scylla-migrate.log'.format(
-                                          self.db_cluster.nodes[0].external_address,
-                                          self.cs_db_cluster.nodes[0].external_address,
-                                          '' if compare_timestamps else '--no-writetime',
-                                          self.KS_NAME, self.TABLE_NAME))
+        res = loader_node.remoter.run(
+            cmd=f"./scylla-migrate check --master-address {self.db_cluster.nodes[0].external_address} --replica-address {self.cs_db_cluster.nodes[0].external_address} --ignore-schema-difference {'' if compare_timestamps else '--no-writetime'} {self.KS_NAME}.{self.TABLE_NAME} 2>&1 | tee scylla-migrate.log"
+        )
+
         loader_node.remoter.receive_files(src='scylla-migrate.log', dst=migrate_log_dst_path)
 
         migrate_ok = res.ok
         if not migrate_ok:
-            self.log.error('scylla-migrate command returned status {}'.format(res.exit_status))
+            self.log.error(f'scylla-migrate command returned status {res.exit_status}')
         with open(migrate_log_dst_path, encoding="utf-8") as file:
-            consistency_ok = 'Consistency check OK.\n' in (line for line in file)
+            consistency_ok = 'Consistency check OK.\n' in iter(file)
 
         return (migrate_ok, consistency_ok)
 
@@ -380,7 +378,7 @@ class CDCReplicationTest(ClusterTester):
                    self.cs_db_cluster.nodes[0].external_address,
                    mode_str(mode)))
 
-        self.log.info('Replicator script:\n{}'.format(replicator_script))
+        self.log.info(f'Replicator script:\n{replicator_script}')
 
         self.log.info('Starting replicator.')
         res = self.loaders.nodes[0].remoter.run(cmd=replicator_script)

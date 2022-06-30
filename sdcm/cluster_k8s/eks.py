@@ -257,8 +257,10 @@ class EksCluster(KubernetesCluster, EksClusterCleanupMixin):
             ('k8s-app', 'kube-proxy'),
         ]
         if self.tenants_number > 1:
-            allowed_labels_on_scylla_node.append(('app', 'scylla'))
-            allowed_labels_on_scylla_node.append(('app.kubernetes.io/name', 'scylla'))
+            allowed_labels_on_scylla_node.extend(
+                (('app', 'scylla'), ('app.kubernetes.io/name', 'scylla'))
+            )
+
         else:
             allowed_labels_on_scylla_node.append(('scylla/cluster', self.k8s_scylla_cluster_name))
         if self.is_performance_tuning_enabled:
@@ -514,8 +516,7 @@ class EksScyllaPodContainer(BaseScyllaPodContainer):
         self.parent_cluster.k8s_cluster.set_tags_on_all_instances()
 
     def ec2_instance_destroy(self, ec2_host=None):
-        ec2_host = ec2_host or self.ec2_host
-        if ec2_host:
+        if ec2_host := ec2_host or self.ec2_host:
             ec2_host.terminate()
 
     def _instance_wait_safe(self, instance_method: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
@@ -601,10 +602,10 @@ class MonitorSetEKS(MonitorSetAWS):
         instances = results[self.region_names[dc_idx]]
 
         def sort_by_index(item):
-            for tag in item['Tags']:
-                if tag['Key'] == 'NodeIndex':
-                    return tag['Value']
-            return '0'
+            return next(
+                (tag['Value'] for tag in item['Tags'] if tag['Key'] == 'NodeIndex'),
+                '0',
+            )
         instances = sorted(instances, key=sort_by_index)
         return [ec2.get_instance(instance['InstanceId']) for instance in instances]
 

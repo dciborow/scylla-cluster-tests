@@ -67,8 +67,7 @@ class SlaPerUserTest(LongevityTest):
         self.prometheus_stats = PrometheusDBStats(host=self.monitors.nodes[0].public_ip_address)
         self.connection_cql = self.db_cluster.cql_connection_patient(
             node=self.db_cluster.nodes[0], user=self.DEFAULT_USER, password=self.DEFAULT_USER_PASSWORD)
-        session = self.connection_cql.session
-        return session
+        return self.connection_cql.session
 
     def create_test_data(self, rows_amount=None):
         # Prefill data before tests
@@ -96,31 +95,35 @@ class SlaPerUserTest(LongevityTest):
         for node_ip in self.db_cluster.get_node_private_ips():
             # Temporary solution
             scheduler_shares = self.prometheus_stats.get_scylla_scheduler_shares_per_sla(start_time, end_time, node_ip)
-            self.log.debug('SCHEDULERS SHARES FROM PROMETHEUS: {}'.format(scheduler_shares))
+            self.log.debug(f'SCHEDULERS SHARES FROM PROMETHEUS: {scheduler_shares}')
             if 'service_level_sg_0' in scheduler_shares:
                 scheduler_shares.pop('service_level_sg_0')
 
             test_users_to_sg = self.user_to_scheduler_group(test_users=users_with_shares,
                                                             scheduler_shares=scheduler_shares)
-            self.log.debug('USER - SERVICE LEVEL - SCHEDULER: {}'.format(test_users_to_sg))
+            self.log.debug(f'USER - SERVICE LEVEL - SCHEDULER: {test_users_to_sg}')
             # End Temporary solution
 
             shards_time_per_sla = self.prometheus_stats.get_scylla_scheduler_runtime_ms(start_time, end_time, node_ip)
             if not (shards_time_per_sla and scheduler_shares):
                 continue
 
-            runtime_per_user = {}
-            for username, val in test_users_to_sg.items():
-                if val[1] in shards_time_per_sla[node_ip]:
-                    runtime_per_user[username] = sum(shards_time_per_sla[node_ip][val[1]]) / \
-                        len(shards_time_per_sla[node_ip][val[1]])
-                else:
-                    runtime_per_user[username] = 0
-            self.log.debug('RUN TIME PER USER: {}'.format(runtime_per_user))
+            runtime_per_user = {
+                username: sum(shards_time_per_sla[node_ip][val[1]])
+                / len(shards_time_per_sla[node_ip][val[1]])
+                if val[1] in shards_time_per_sla[node_ip]
+                else 0
+                for username, val in test_users_to_sg.items()
+            }
+
+            self.log.debug(f'RUN TIME PER USER: {runtime_per_user}')
             actual_shares_ratio = self.calculate_metrics_ratio_per_user(two_users_list=read_users,
                                                                         metrics=runtime_per_user)
-            self.validate_deviation(expected_ratio=expected_ratio, actual_ratio=actual_shares_ratio,
-                                    msg='Validate scheduler CPU runtime on the node %s' % node_ip)
+            self.validate_deviation(
+                expected_ratio=expected_ratio,
+                actual_ratio=actual_shares_ratio,
+                msg=f'Validate scheduler CPU runtime on the node {node_ip}',
+            )
 
     @staticmethod
     def create_auths(entities_list_of_dict):
@@ -165,8 +168,7 @@ class SlaPerUserTest(LongevityTest):
     def calculate_deviation(first, second):
         if first and second:
             _first, _second = (first, second) if first > second else (second, first)
-            dev = float(abs(_first - _second) * 100 / _second)
-            return dev
+            return float(abs(_first - _second) * 100 / _second)
         return None
 
     @staticmethod
@@ -215,11 +217,17 @@ class SlaPerUserTest(LongevityTest):
                 username = res[0].get('username')
 
             if not (stat_rate and username):
-                self.log.error('Stress statistics are not received for user {}. Can\'t complete the test'
-                               .format(users_names[i]))
+                self.log.error(
+                    f"Stress statistics are not received for user {users_names[i]}. Can\'t complete the test"
+                )
+
                 return None
-            self.assertEqual(username, users_names[i], msg='Expected that stress was run with user "{}" but it was "{}"'
-                             .format(users_names[i], username))
+            self.assertEqual(
+                username,
+                users_names[i],
+                msg=f'Expected that stress was run with user "{users_names[i]}" but it was "{username}"',
+            )
+
             results[username] = float(stat_rate)
 
         return results
@@ -235,8 +243,7 @@ class SlaPerUserTest(LongevityTest):
         for entity in entities_list_of_dict:
             service_level = entity.get('service_level')
             role = entity.get('role')
-            user = entity.get('user')
-            if user:
+            if user := entity.get('user'):
                 user.drop()
             if role:
                 role.drop()
@@ -326,12 +333,20 @@ class SlaPerUserTest(LongevityTest):
 
         # Define Service Levels/Roles/Users
 
-        read_users = []
-        for share in shares:
-            read_users.append({'user': User(session=session, name='user%d' % share, password='user%d' % share),
-                               'role': Role(session=session, name='role%d' % share),
-                               'service_level': ServiceLevel(session=session, name='sla%d' % share,
-                                                             shares=share)})
+        read_users = [
+            {
+                'user': User(
+                    session=session,
+                    name='user%d' % share,
+                    password='user%d' % share,
+                ),
+                'role': Role(session=session, name='role%d' % share),
+                'service_level': ServiceLevel(
+                    session=session, name='sla%d' % share, shares=share
+                ),
+            }
+            for share in shares
+        ]
 
         expected_shares_ratio = self.calculate_metrics_ratio_per_user(two_users_list=read_users)
 
@@ -370,7 +385,7 @@ class SlaPerUserTest(LongevityTest):
         finally:
             self.clean_auth(entities_list_of_dict=read_users)
 
-    def test_read_throughput_vs_latency_cache_and_disk(self):  # pylint: disable=invalid-name
+    def test_read_throughput_vs_latency_cache_and_disk(self):    # pylint: disable=invalid-name
         """
         Test when one user run load with high latency and another  - with high througput
         The load is run on the full data set (that is read from both the cache and the disk)
@@ -387,17 +402,23 @@ class SlaPerUserTest(LongevityTest):
         """
         stress_duration = 10  # minutes
         shares = [190, 950]
-        read_users = []
-
         session = self.prepare_schema()
         self.create_test_data()
 
-        # Define Service Levels/Roles/Users
-        for share in shares:
-            read_users.append({'user': User(session=session, name='user%d' % share, password='user%d' % share),
-                               'role': Role(session=session, name='role%d' % share),
-                               'service_level': ServiceLevel(session=session, name='sla%d' % share,
-                                                             shares=share)})
+        read_users = [
+            {
+                'user': User(
+                    session=session,
+                    name='user%d' % share,
+                    password='user%d' % share,
+                ),
+                'role': Role(session=session, name='role%d' % share),
+                'service_level': ServiceLevel(
+                    session=session, name='sla%d' % share, shares=share
+                ),
+            }
+            for share in shares
+        ]
 
         # Create Service Levels/Roles/Users
         self.create_auths(entities_list_of_dict=read_users)
@@ -417,7 +438,7 @@ class SlaPerUserTest(LongevityTest):
 
         self._throughput_latency_tests_run(read_users=read_users, read_cmds=read_cmds, latency_user=read_users[1])
 
-    def test_read_throughput_vs_latency_cache_only(self):  # pylint: disable=invalid-name
+    def test_read_throughput_vs_latency_cache_only(self):    # pylint: disable=invalid-name
         """
         Test when one user run load with high latency and another  - with high througput
         The load is run on the data set that fully exists in the cache
@@ -437,20 +458,26 @@ class SlaPerUserTest(LongevityTest):
         # Select part of the record to warm the cache (all this data will be in the cache).
         # This amount of data will be read during the test from cache
         max_key_for_read = int(self.num_of_partitions*0.5)
-        read_users = []
-
         session = self.prepare_schema()
         self.create_test_data()
 
         # Warm up the cache to guarantee the read will be from disk
         self.warm_up_cache_before_test(max_key_for_read=max_key_for_read, stress_duration=30)
 
-        # Define Service Levels/Roles/Users
-        for share in shares:
-            read_users.append({'user': User(session=session, name='user%d' % share, password='user%d' % share),
-                               'role': Role(session=session, name='role%d' % share),
-                               'service_level': ServiceLevel(session=session, name='sla%d' % share,
-                                                             shares=share)})
+        read_users = [
+            {
+                'user': User(
+                    session=session,
+                    name='user%d' % share,
+                    password='user%d' % share,
+                ),
+                'role': Role(session=session, name='role%d' % share),
+                'service_level': ServiceLevel(
+                    session=session, name='sla%d' % share, shares=share
+                ),
+            }
+            for share in shares
+        ]
 
         # Create Service Levels/Roles/Users
         self.create_auths(entities_list_of_dict=read_users)
@@ -471,7 +498,7 @@ class SlaPerUserTest(LongevityTest):
 
         self._throughput_latency_tests_run(read_users=read_users, read_cmds=read_cmds, latency_user=read_users[1])
 
-    def test_read_throughput_vs_latency_disk_only(self):  # pylint: disable=invalid-name
+    def test_read_throughput_vs_latency_disk_only(self):    # pylint: disable=invalid-name
         """
         Test when one user run load with high latency and another  - with high througput
         The load is run on the data set that fully exists in the cache
@@ -504,12 +531,20 @@ class SlaPerUserTest(LongevityTest):
 
         # Define Service Levels/Roles/Users
         shares = [190, 950]
-        read_users = []
-        for share in shares:
-            read_users.append({'user': User(session=session, name='user%d' % share, password='user%d' % share),
-                               'role': Role(session=session, name='role%d' % share),
-                               'service_level': ServiceLevel(session=session, name='sla%d' % share,
-                                                             shares=share)})
+        read_users = [
+            {
+                'user': User(
+                    session=session,
+                    name='user%d' % share,
+                    password='user%d' % share,
+                ),
+                'role': Role(session=session, name='role%d' % share),
+                'service_level': ServiceLevel(
+                    session=session, name='sla%d' % share, shares=share
+                ),
+            }
+            for share in shares
+        ]
 
         # Create Service Levels/Roles/Users
         self.create_auths(entities_list_of_dict=read_users)
@@ -554,12 +589,20 @@ class SlaPerUserTest(LongevityTest):
 
         # Define Service Levels/Roles/Users
         shares = [190, 950]
-        read_users = []
-        for share in shares:
-            read_users.append({'user': User(session=session, name='user%d' % share, password='user%d' % share),
-                               'role': Role(session=session, name='role%d' % share),
-                               'service_level': ServiceLevel(session=session, name='sla%d' % share,
-                                                             shares=share)})
+        read_users = [
+            {
+                'user': User(
+                    session=session,
+                    name='user%d' % share,
+                    password='user%d' % share,
+                ),
+                'role': Role(session=session, name='role%d' % share),
+                'service_level': ServiceLevel(
+                    session=session, name='sla%d' % share, shares=share
+                ),
+            }
+            for share in shares
+        ]
 
         # Create Service Levels/Roles/Users
         self.create_auths(entities_list_of_dict=read_users)
@@ -669,8 +712,8 @@ class SlaPerUserTest(LongevityTest):
             grafana_screenshots = grafana_dataset.get('screenshots', [])
             grafana_snapshots = grafana_dataset.get('snapshots', [])
 
-            self.log.debug('GRAFANA SCREENSHOTS: {}'.format(grafana_screenshots))
-            self.log.debug('GRAFANA SNAPSHOTS: {}'.format(grafana_snapshots))
+            self.log.debug(f'GRAFANA SCREENSHOTS: {grafana_screenshots}')
+            self.log.debug(f'GRAFANA SNAPSHOTS: {grafana_snapshots}')
 
             # Compare latency of two runs
             self.log.debug('Test results:\n---------------------\n')
@@ -679,13 +722,22 @@ class SlaPerUserTest(LongevityTest):
             deviation = self.calculate_deviation(latency_99_latency_workload, latency_99_mixed_workload)
             latency_change = 'increased' if latency_99_mixed_workload > latency_99_latency_workload else 'decreased'
 
-            result_print_str = '\nTest results:\n---------------------\n'
-            result_print_str += '\nWorkload                  |      Latency 99%'
+            result_print_str = (
+                '\nTest results:\n---------------------\n'
+                + '\nWorkload                  |      Latency 99%'
+            )
+
             result_print_str += '\n========================= | ================='
-            result_print_str += '\nLatency only              |      {}'.format(latency_99_latency_workload)
-            result_print_str += '\nLatency and throughput    |      {}'.format(latency_99_mixed_workload)
+            result_print_str += (
+                f'\nLatency only              |      {latency_99_latency_workload}'
+            )
+
+            result_print_str += (
+                f'\nLatency and throughput    |      {latency_99_mixed_workload}'
+            )
+
             result_print_str += '\n------------------------- | -----------------'
-            result_print_str += '\nLatency 99 is {} in {}%'.format(latency_change, deviation)
+            result_print_str += f'\nLatency 99 is {latency_change} in {deviation}%'
 
             self.log.info(result_print_str)
         finally:
@@ -699,11 +751,12 @@ class SlaPerUserTest(LongevityTest):
         for workload in workloads_queue:
             result = self.get_stress_results(queue=workload, store_results=False)
 
-            workloads_results.update({result[0].get("username"): result[0]})
+            workloads_results[result[0].get("username")] = result[0]
 
-        assert len(workloads_results) == 2, \
-            "Expected workload_results length to be 2, got: %s. workload_results: %s" % (
-                len(workloads_results), workloads_results)
+        assert (
+            len(workloads_results) == 2
+        ), f"Expected workload_results length to be 2, got: {len(workloads_results)}. workload_results: {workloads_results}"
+
         comparison_results = {}
         try:
             for item, target_margin in comparison_axis.items():
@@ -711,17 +764,14 @@ class SlaPerUserTest(LongevityTest):
                 batch = float(workloads_results["batch"][item])
                 ratio = interactive / batch if item == "op rate" else batch / interactive
 
-                comparison_results.update(
-                    {
-                        item: {
-                            "interactive": interactive,
-                            "batch": batch,
-                            "diff": batch - interactive,
-                            "ratio": ratio,
-                            "within_margin": ratio >= target_margin
-                        }
-                    }
-                )
+                comparison_results[item] = {
+                    "interactive": interactive,
+                    "batch": batch,
+                    "diff": batch - interactive,
+                    "ratio": ratio,
+                    "within_margin": ratio >= target_margin,
+                }
+
             return comparison_results
         except Exception:
             self.log.info("Failed to compare c-s results for batch and interactive"
@@ -758,12 +808,16 @@ class SlaPerUserTest(LongevityTest):
         except Exception as error:  # pylint: disable=broad-except
             self.log.error("Error in gathering Grafana screenshots and snapshots. Error:\n%s", error)
 
-        email_data.update({"grafana_screenshots": grafana_dataset.get("screenshots", []),
-                           "grafana_snapshots": grafana_dataset.get("snapshots", []),
-                           "scylla_ami_id": self.params.get("ami_id_db_scylla") or "-",
-                           "region": self.params.get("region_name") or "-",
-                           "workload_comparison": self._comparison_results if self._comparison_results else {}
-                           })
+        email_data.update(
+            {
+                "grafana_screenshots": grafana_dataset.get("screenshots", []),
+                "grafana_snapshots": grafana_dataset.get("snapshots", []),
+                "scylla_ami_id": self.params.get("ami_id_db_scylla") or "-",
+                "region": self.params.get("region_name") or "-",
+                "workload_comparison": self._comparison_results or {},
+            }
+        )
+
 
         return email_data
 

@@ -396,27 +396,30 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         )
         disrupt_methods_list = []
         for subclass in subclasses_list:
-            method_name = re.search(
-                r'self\.(?P<method_name>disrupt_[A-Za-z_]+?)\(.*\)', inspect.getsource(subclass), flags=re.MULTILINE)
-            if method_name:
+            if method_name := re.search(
+                r'self\.(?P<method_name>disrupt_[A-Za-z_]+?)\(.*\)',
+                inspect.getsource(subclass),
+                flags=re.MULTILINE,
+            ):
                 disrupt_methods_list.append(method_name.group('method_name'))
-        self.log.debug("Gathered subclass methods: {}".format(disrupt_methods_list))
+        self.log.debug(f"Gathered subclass methods: {disrupt_methods_list}")
         return disrupt_methods_list
 
     def get_list_of_subclasses_by_property_name(self, list_of_properties_to_include):
         flags = {flag_name.strip('!'): not flag_name.startswith(
             '!') for flag_name in list_of_properties_to_include}
-        subclasses_list = self._get_subclasses(**flags)
-        return subclasses_list
+        return self._get_subclasses(**flags)
 
     def get_list_of_disrupt_methods(self, subclasses_list):
         disrupt_methods_list = []
         for subclass in subclasses_list:
-            method_name = re.search(
-                r'self\.(?P<method_name>disrupt_[0-9A-Za-z_]+?)\(.*\)', inspect.getsource(subclass), flags=re.MULTILINE)
-            if method_name:
+            if method_name := re.search(
+                r'self\.(?P<method_name>disrupt_[0-9A-Za-z_]+?)\(.*\)',
+                inspect.getsource(subclass),
+                flags=re.MULTILINE,
+            ):
                 disrupt_methods_list.append(method_name.group('method_name'))
-        self.log.debug("list of matching disrupions: {}".format(disrupt_methods_list))
+        self.log.debug(f"list of matching disrupions: {disrupt_methods_list}")
         for _ in disrupt_methods_list:
             disrupt_methods = [attr[1] for attr in inspect.getmembers(self) if
                                attr[0] in disrupt_methods_list and
@@ -896,12 +899,16 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         ks_cf_for_destroy = random.choice(ks_cfs)  # expected value as: 'keyspace1.standard1'
 
         ks_cf_for_destroy = ks_cf_for_destroy.replace('.', '/')
-        files = self.target_node.remoter.sudo("find /var/lib/scylla/data/%s-* -maxdepth 1 -type f"
-                                              % ks_cf_for_destroy, verbose=False)
+        files = self.target_node.remoter.sudo(
+            f"find /var/lib/scylla/data/{ks_cf_for_destroy}-* -maxdepth 1 -type f",
+            verbose=False,
+        )
+
         if files.stderr:
             raise NoFilesFoundToDestroy(
-                'Failed to get data files for destroy in {}. Error: {}'.format(ks_cf_for_destroy,
-                                                                               files.stderr))
+                f'Failed to get data files for destroy in {ks_cf_for_destroy}. Error: {files.stderr}'
+            )
+
 
         for one_file in files.stdout.split():
             if not one_file or '/' not in one_file:
@@ -918,16 +925,19 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
                 self.log.debug('File name "{file_name}" is not as expected for Scylla data files. '
                                'Search files for "{ks_cf_for_destroy}" table'.format(file_name=file_name,
                                                                                      ks_cf_for_destroy=ks_cf_for_destroy))
-                self.log.debug('Error: {}'.format(error))
+                self.log.debug(f'Error: {error}')
                 continue
 
-            file_for_destroy = one_file.replace(file_name, file_name_template + '-*')
-            self.log.debug('Selected files for destroy: {}'.format(file_for_destroy))
+            file_for_destroy = one_file.replace(file_name, f'{file_name_template}-*')
+            self.log.debug(f'Selected files for destroy: {file_for_destroy}')
             if file_for_destroy:
                 break
 
         if not file_for_destroy:
-            raise NoFilesFoundToDestroy('Data file for destroy is not found in {}'.format(ks_cf_for_destroy))
+            raise NoFilesFoundToDestroy(
+                f'Data file for destroy is not found in {ks_cf_for_destroy}'
+            )
+
 
         return file_for_destroy
 
@@ -941,8 +951,9 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         tables = []
         with self.cluster.cql_connection_patient(self.target_node) as session:
             for table in ks_cfs:
-                has_data = self.cluster.is_table_has_data(session=session, table_name=table)
-                if has_data:
+                if has_data := self.cluster.is_table_has_data(
+                    session=session, table_name=table
+                ):
                     tables.append(table)
                 if len(tables) > 20:
                     break
@@ -957,11 +968,13 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
                 file_for_destroy = self._choose_file_for_destroy(tables)
 
-                result = self.target_node.remoter.sudo('rm -f %s' % file_for_destroy)
+                result = self.target_node.remoter.sudo(f'rm -f {file_for_destroy}')
                 if result.stderr:
-                    raise FilesNotCorrupted('Files were not corrupted. CorruptThenRepair nemesis can\'t be run. '
-                                            'Error: {}'.format(result))
-                self.log.debug('Files {} were destroyed'.format(file_for_destroy))
+                    raise FilesNotCorrupted(
+                        f"Files were not corrupted. CorruptThenRepair nemesis can\'t be run. Error: {result}"
+                    )
+
+                self.log.debug(f'Files {file_for_destroy} were destroyed')
 
         finally:
             self.target_node.start_scylla_server(verify_up=True, verify_down=False)
@@ -976,10 +989,10 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         return self.__class__.__name__.replace('Monkey', '')
 
     def _set_current_disruption(self, label=None, node=None):
-        self.target_node = node if node else self.target_node
+        self.target_node = node or self.target_node
 
         if not label:
-            label = "%s on target node %s" % (self.__class__.__name__, self.target_node)
+            label = f"{self.__class__.__name__} on target node {self.target_node}"
         self.log.debug('Set current_disruption -> %s', label)
         self.current_disruption = label
 
@@ -1475,7 +1488,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
         if all_nodes:
             nodes = self.cluster.nodes
-            InfoEvent('Enospc test on {}'.format([n.name for n in nodes])).publish()
+            InfoEvent(f'Enospc test on {[n.name for n in nodes]}').publish()
         else:
             nodes = [self.target_node]
 
@@ -1544,7 +1557,10 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
     def execute_disrupt_method(self, disrupt_method):
         disrupt_method_name = disrupt_method.__name__.replace('disrupt_', '')
-        self.log.info(">>>>>>>>>>>>>Started random_disrupt_method %s" % disrupt_method_name)
+        self.log.info(
+            f">>>>>>>>>>>>>Started random_disrupt_method {disrupt_method_name}"
+        )
+
         self.metrics_srv.event_start(disrupt_method_name)
         try:
             disrupt_method()
@@ -1554,7 +1570,10 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             self.error_list.append(error_msg)
             raise
         else:
-            self.log.info("<<<<<<<<<<<<<Finished random_disrupt_method %s" % disrupt_method_name)
+            self.log.info(
+                f"<<<<<<<<<<<<<Finished random_disrupt_method {disrupt_method_name}"
+            )
+
         finally:
             self.metrics_srv.event_stop(disrupt_method_name)
 
@@ -1570,11 +1589,10 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         Here it kept for future usages and unit testing ability.
         more about nemesis_selector behaviour in sct_config.py
         """
-        nemesis_selector = self.cluster.params.get('nemesis_selector')
-        if nemesis_selector:
-            subclasses = self.get_list_of_subclasses_by_property_name(
-                list_of_properties_to_include=nemesis_selector)
-            if subclasses:
+        if nemesis_selector := self.cluster.params.get('nemesis_selector'):
+            if subclasses := self.get_list_of_subclasses_by_property_name(
+                list_of_properties_to_include=nemesis_selector
+            ):
                 disruptions = self.get_list_of_disrupt_methods(subclasses_list=subclasses)
             else:
                 disruptions = []
@@ -1582,12 +1600,16 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             disruptions = [attr[1] for attr in inspect.getmembers(self)
                            if attr[0].startswith('disrupt_') and callable(attr[1])]
 
-        nemesis_multiply_factor = self.cluster.params.get('nemesis_multiply_factor')
-        if nemesis_multiply_factor:
+        if nemesis_multiply_factor := self.cluster.params.get(
+            'nemesis_multiply_factor'
+        ):
             disruptions = disruptions * nemesis_multiply_factor
 
         self.disruptions_list.extend(disruptions)
-        self.log.debug("This is the list of callable disruptions {}".format(self.disruptions_list))
+        self.log.debug(
+            f"This is the list of callable disruptions {self.disruptions_list}"
+        )
+
         return self.disruptions_list
 
     @property
@@ -1616,7 +1638,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
     @latency_calculator_decorator(legend="Run repair process with nodetool repair")
     def repair_nodetool_repair(self, node=None, publish_event=True):
-        node = node if node else self.target_node
+        node = node or self.target_node
         node.run_nodetool(sub_cmd="repair", publish_event=publish_event)
 
     def repair_nodetool_rebuild(self):
@@ -1626,7 +1648,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         # This fix important when just user profile is run in the test and "keyspace1" doesn't exist.
         test_keyspaces = self.cluster.get_test_keyspaces()
         for node in self.cluster.nodes:
-            InfoEvent('NodetoolCleanupMonkey %s' % node).publish()
+            InfoEvent(f'NodetoolCleanupMonkey {node}').publish()
             for keyspace in test_keyspaces:
                 node.run_nodetool(sub_cmd="cleanup", args=keyspace)
 
@@ -1652,7 +1674,9 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         # In order to workaround issue #4924 when truncate timeouts, we try to flush before truncate.
         self.target_node.run_nodetool("flush")
         # do the actual truncation
-        self.target_node.run_cqlsh(cmd='TRUNCATE {}.{}'.format(keyspace_truncate, table), timeout=120)
+        self.target_node.run_cqlsh(
+            cmd=f'TRUNCATE {keyspace_truncate}.{table}', timeout=120
+        )
 
     def disrupt_truncate_large_partition(self):
         """
@@ -1673,11 +1697,14 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         # In order to workaround issue #4924 when truncate timeouts, we try to flush before truncate.
         self.target_node.run_nodetool("flush")
         # do the actual truncation
-        self.target_node.run_cqlsh(cmd='TRUNCATE {}.{}'.format(ks_name, table), timeout=120)
+        self.target_node.run_cqlsh(cmd=f'TRUNCATE {ks_name}.{table}', timeout=120)
 
     def _modify_table_property(self, name, val, filter_out_table_with_counter=False):
         disruption_name = "".join([p.strip().capitalize() for p in name.split("_")])
-        InfoEvent('ModifyTableProperties%s %s' % (disruption_name, self.target_node)).publish()
+        InfoEvent(
+            f'ModifyTableProperties{disruption_name} {self.target_node}'
+        ).publish()
+
 
         ks_cfs = self.cluster.get_non_system_ks_cf_list(
             db_node=self.target_node, filter_out_table_with_counter=filter_out_table_with_counter,
@@ -1733,9 +1760,10 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
     def _add_drop_column_get_target_table(self, stored_target_table: list):
         current_tables = self._get_all_tables_with_no_compact_storage(self._add_drop_column_tables_to_ignore)
-        if stored_target_table:
-            if stored_target_table[1] in current_tables.get(stored_target_table[0], []):
-                return stored_target_table
+        if stored_target_table and stored_target_table[1] in current_tables.get(
+            stored_target_table[0], []
+        ):
+            return stored_target_table
         if not current_tables:
             return None
         ks_name = next(iter(current_tables.keys()))
@@ -1771,8 +1799,9 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         if columns_to_drop > 1:
             columns_to_drop = random.randrange(1, columns_to_drop)
         for _ in range(columns_to_drop):
-            choice = [n for n in added_columns_info['column_names'] if n not in drop]
-            if choice:
+            if choice := [
+                n for n in added_columns_info['column_names'] if n not in drop
+            ]:
                 column_name = random.choice(choice)
                 drop.append(column_name)
         return drop
@@ -1830,8 +1859,8 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
                     column_type = added_columns_info['column_names'][column_name]
                     del added_columns_info['column_names'][column_name]
         if add:
-            cmd = f"ALTER TABLE {self._add_drop_column_target_table[1]} " \
-                  f"ADD ( {', '.join(['%s %s' % (col[0], col[1]) for col in add])} );"
+            cmd = f"ALTER TABLE {self._add_drop_column_target_table[1]} ADD ( {', '.join([f'{col[0]} {col[1]}' for col in add])} );"
+
             if self._add_drop_column_run_cql_query(cmd, self._add_drop_column_target_table[0]):
                 for column_name, column_type in add:
                     added_columns_info['column_names'][column_name] = column_type
@@ -1875,7 +1904,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             partition_range_splitted = partition_range_with_data_validation.split('-')
             start_range = int(partition_range_splitted[0])
             end_range = int(partition_range_splitted[1])
-            exclude_partitions.extend(i for i in range(start_range, end_range))
+            exclude_partitions.extend(iter(range(start_range, end_range)))
 
         partitions_for_delete = defaultdict(list)
         with self.cluster.cql_connection_patient(self.target_node, connect_timeout=300) as session:
@@ -1928,9 +1957,11 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             self.log.error('Not found partitions for delete')
             return partitions_for_delete
 
-        queries = []
-        for pkey, ckey in partitions_for_delete.items():
-            queries.append(f"delete from {ks_cf} where pk = {pkey} and ck > {int(ckey[1] / 2)}")
+        queries = [
+            f"delete from {ks_cf} where pk = {pkey} and ck > {int(ckey[1] / 2)}"
+            for pkey, ckey in partitions_for_delete.items()
+        ]
+
         self.run_deletions(queries=queries, ks_cf=ks_cf)
 
         return partitions_for_delete
@@ -1948,8 +1979,8 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         # Choose same "ck" values that exists for all partitions
         # min_clustering_key - the biggest from min(ck) value for all selected partitions
         # max_clustering_key - the smallest from max(ck) value for all selected partitions
-        min_clustering_key = max([v[0] for v in partitions_for_delete.values()])
-        max_clustering_key = min([v[1] for v in partitions_for_delete.values()])
+        min_clustering_key = max(v[0] for v in partitions_for_delete.values())
+        max_clustering_key = min(v[1] for v in partitions_for_delete.values())
         clustering_keys = []
         if max_clustering_key > min_clustering_key:
             third_ck = int((max_clustering_key - min_clustering_key) / 3)
@@ -1958,10 +1989,11 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         if not clustering_keys:
             clustering_keys = range(min_clustering_key, max_clustering_key)
 
-        queries = []
-        for pkey in partitions_for_delete.keys():
-            queries.append(f"delete from {ks_cf} where pk = {pkey} and ck >= {clustering_keys[0]} "
-                           f"and ck <= {clustering_keys[-1]}")
+        queries = [
+            f"delete from {ks_cf} where pk = {pkey} and ck >= {clustering_keys[0]} "
+            f"and ck <= {clustering_keys[-1]}"
+            for pkey in partitions_for_delete.keys()
+        ]
 
         self.run_deletions(queries=queries, ks_cf=ks_cf)
 
@@ -1980,9 +2012,10 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             self.log.error('Not found partitions for delete')
             return
 
-        queries = []
-        for partition_key in partitions_for_delete.keys():
-            queries.append(f"delete from {ks_cf} where pk = {partition_key}")
+        queries = [
+            f"delete from {ks_cf} where pk = {partition_key}"
+            for partition_key in partitions_for_delete.keys()
+        ]
 
         self.run_deletions(queries=queries, ks_cf=ks_cf)
 
@@ -2093,11 +2126,12 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         new_gc_mode_as_dict = {'mode': new_gc_mode.value}
 
         alter_command_prefix = 'ALTER TABLE ' if keyspace_table not in mview_ks_cfs else 'ALTER MATERIALIZED VIEW '
-        cmd = alter_command_prefix + f" {keyspace_table} WITH tombstone_gc = {new_gc_mode_as_dict};"
+        cmd = f"{alter_command_prefix} {keyspace_table} WITH tombstone_gc = {new_gc_mode_as_dict};"
+
         self.log.info("Alter GC mode query to execute: %s", cmd)
         self.target_node.run_cqlsh(cmd)
 
-    def toggle_table_ics(self):  # pylint: disable=too-many-locals
+    def toggle_table_ics(self):    # pylint: disable=too-many-locals
         """
             Alters a non-system table compaction strategy from ICS to any-other and vise versa.
         """
@@ -2123,11 +2157,11 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
         if new_compaction_strategy in [CompactionStrategy.INCREMENTAL, CompactionStrategy.SIZE_TIERED]:
             for param in list_additional_params:
-                new_compaction_strategy_as_dict.update(param)
+                new_compaction_strategy_as_dict |= param
         alter_command_prefix = 'ALTER TABLE ' if keyspace_table not in mview_ks_cfs else 'ALTER MATERIALIZED VIEW '
         cmd = alter_command_prefix + \
             " {keyspace_table} WITH compaction = {new_compaction_strategy_as_dict};".format(**locals())
-        self.log.debug("Toggle table ICS query to execute: {}".format(cmd))
+        self.log.debug(f"Toggle table ICS query to execute: {cmd}")
         try:
             self.target_node.run_cqlsh(cmd)
         except (UnexpectedExit, Libssh2UnexpectedExit) as unexpected_exit:
@@ -2313,9 +2347,11 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         mgr_cluster = self.cluster.get_cluster_manager()
         mgr_task = mgr_cluster.create_repair_task()
         task_final_status = mgr_task.wait_and_get_final_status(timeout=86400)  # timeout is 24 hours
-        assert task_final_status == TaskStatus.DONE, 'Task: {} final status is: {}.'.format(
-            mgr_task.id, str(mgr_task.status))
-        self.log.info('Task: {} is done.'.format(mgr_task.id))
+        assert (
+            task_final_status == TaskStatus.DONE
+        ), f'Task: {mgr_task.id} final status is: {str(mgr_task.status)}.'
+
+        self.log.info(f'Task: {mgr_task.id} is done.')
 
     def disrupt_abort_repair(self):
         """
@@ -2340,8 +2376,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             active_repair_cmd = 'curl -s -X GET --header "Content-Type: application/json" --header ' \
                                 '"Accept: application/json" "http://127.0.0.1:10000/storage_service/active_repair/"'
             result = self.target_node.remoter.run(active_repair_cmd)
-            active_repairs = re.match(r".*\[(\d)+\].*", result.stdout)
-            if active_repairs:
+            if active_repairs := re.match(r".*\[(\d)+\].*", result.stdout):
                 self.log.debug("Found '%s' active repairs", active_repairs.group(1))
                 return True
             return False
@@ -2487,8 +2522,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         def _few_tables():
             def get_ks_with_few_tables(keyspace_table):
                 ks_occurrences = Counter([ks.split('.')[0] for ks in keyspace_table])
-                repeated_ks = [ks for ks, count in ks_occurrences.items() if count > 1]
-                return repeated_ks
+                return [ks for ks, count in ks_occurrences.items() if count > 1]
 
             self.log.info("Take few tables snapshot")
             # Prefer to take snapshot of test table. Try to find it
@@ -2594,7 +2628,10 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         now = time.time()
         results = prometheus_stats.query(query=query, start=now - 600, end=now)
         assert results, "no results for node_network_receive_bytes_total metric in Prometheus "
-        avg_bitrate_per_node = max([float(avg_rate) for _, avg_rate in results[0]["values"]])
+        avg_bitrate_per_node = max(
+            float(avg_rate) for _, avg_rate in results[0]["values"]
+        )
+
         avg_mpbs_per_node = avg_bitrate_per_node / 1024 / 1024
 
         if avg_mpbs_per_node > 10:
@@ -2607,7 +2644,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
             max_limit = int(round(avg_kbps_per_node * 0.70))
             rate_limit_suffix = "kbps"
 
-        return "{}{}".format(random.randrange(min_limit, max_limit), rate_limit_suffix)
+        return f"{random.randrange(min_limit, max_limit)}{rate_limit_suffix}"
 
     def disrupt_network_random_interruptions(self):  # pylint: disable=invalid-name
         # pylint: disable=too-many-locals
@@ -2631,14 +2668,28 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         delay_in_secs = random.randrange(1, 30)
 
         list_of_tc_options = [
-            ("NetworkRandomInterruption_{}pct_loss".format(loss_percentage), "--loss {}%".format(loss_percentage)),
-            ("NetworkRandomInterruption_{}pct_corrupt".format(corrupt_percentage),
-             "--corrupt {}%".format(corrupt_percentage)),
-            ("NetworkRandomInterruption_{}sec_delay".format(delay_in_secs),
-             "--delay {}s --delay-distro 500ms".format(delay_in_secs))]
+            (
+                f"NetworkRandomInterruption_{loss_percentage}pct_loss",
+                f"--loss {loss_percentage}%",
+            ),
+            (
+                f"NetworkRandomInterruption_{corrupt_percentage}pct_corrupt",
+                f"--corrupt {corrupt_percentage}%",
+            ),
+            (
+                f"NetworkRandomInterruption_{delay_in_secs}sec_delay",
+                f"--delay {delay_in_secs}s --delay-distro 500ms",
+            ),
+        ]
+
         if rate_limit:
             list_of_tc_options.append(
-                ("NetworkRandomInterruption_{}_limit".format(rate_limit), "--rate {}".format(rate_limit)))
+                (
+                    f"NetworkRandomInterruption_{rate_limit}_limit",
+                    f"--rate {rate_limit}",
+                )
+            )
+
 
         list_of_timeout_options = [10, 60, 120, 300, 500]
         option_name, selected_option = random.choice(list_of_tc_options)
@@ -2722,9 +2773,14 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
         def remove_node():
             # nodetool removenode 'host_id'
             rnd_node = random.choice([n for n in self.cluster.nodes if n is not self.target_node])
-            self.log.info("Running removenode command on {}, Removing node with the following host_id: {}"
-                          .format(rnd_node.ip_address, host_id))
-            res = rnd_node.run_nodetool("removenode {}".format(host_id), ignore_status=True, verbose=True)
+            self.log.info(
+                f"Running removenode command on {rnd_node.ip_address}, Removing node with the following host_id: {host_id}"
+            )
+
+            res = rnd_node.run_nodetool(
+                f"removenode {host_id}", ignore_status=True, verbose=True
+            )
+
             return res.exit_status
 
         # full cluster repair
@@ -2932,7 +2988,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
                     f"{cmd} on node {node} due to the following error: {str(exc)}")
         if not cmd_executed:
             return
-        for cmd_num, cmd in enumerate(cleanup_commands):
+        for cmd in cleanup_commands:
             try:
                 node.remoter.run(cmd)
             except Exception as exc:  # pylint: disable=broad-except
@@ -3129,10 +3185,13 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
         # Corrupt data file
         data_file_pattern = self._choose_file_for_destroy(ks_cfs)
-        res = self.target_node.remoter.run('sudo find {}-Data.db'.format(data_file_pattern))
+        res = self.target_node.remoter.run(f'sudo find {data_file_pattern}-Data.db')
         for sstable_file in res.stdout.split():
-            self.target_node.remoter.run('sudo dd if=/dev/urandom of={} count=1024'.format(sstable_file))
-            self.log.debug('File {} was corrupted by dd'.format(sstable_file))
+            self.target_node.remoter.run(
+                f'sudo dd if=/dev/urandom of={sstable_file} count=1024'
+            )
+
+            self.log.debug(f'File {sstable_file} was corrupted by dd')
 
     def disrupt_corrupt_then_scrub(self):
         """
@@ -3277,7 +3336,7 @@ class Nemesis:  # pylint: disable=too-many-instance-attributes,too-many-public-m
 
     def disrupt_run_unique_sequence(self):
         sleep_time_between_ops = self.cluster.params.get('nemesis_sequence_sleep_between_ops')
-        sleep_time_between_ops = sleep_time_between_ops if sleep_time_between_ops else 8
+        sleep_time_between_ops = sleep_time_between_ops or 8
         sleep_time_between_ops = sleep_time_between_ops * 60
         if not self.has_steady_run:
             self.steady_state_latency()

@@ -73,7 +73,10 @@ class NoSQLBenchStressThread(DockerBasedStressThread):  # pylint: disable=too-ma
             threads_on_loader += 1
             self._per_loader_count[threads_on_loader] = threads_on_loader
         stress_cmd = self.stress_cmd.replace('nosqlbench', '') + f" hosts={target_address}"
-        stress_cmd += ' table=nosqlbench_table_' + str(loader_idx + 1) + '_' + str(threads_on_loader)
+        stress_cmd += (
+            f' table=nosqlbench_table_{str(loader_idx + 1)}_{threads_on_loader}'
+        )
+
         return stress_cmd
 
     def _run_stress(self, loader, loader_idx, cpu_idx):
@@ -81,8 +84,11 @@ class NoSQLBenchStressThread(DockerBasedStressThread):  # pylint: disable=too-ma
 
         if not os.path.exists(loader.logdir):
             os.makedirs(loader.logdir, exist_ok=True)
-        log_file_name = os.path.join(loader.logdir, 'nosql-bench-l%s-c%s-%s.log' %
-                                     (loader_idx, cpu_idx, uuid.uuid4()))
+        log_file_name = os.path.join(
+            loader.logdir,
+            f'nosql-bench-l{loader_idx}-c{cpu_idx}-{uuid.uuid4()}.log',
+        )
+
         LOGGER.debug('nosql-bench-stress local log: %s', log_file_name)
         LOGGER.debug("'running: %s", stress_cmd)
         with NoSQLBenchStressEvent(node=loader, stress_cmd=stress_cmd, log_file_name=log_file_name) as stress_event, \

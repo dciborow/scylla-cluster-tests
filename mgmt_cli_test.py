@@ -215,17 +215,16 @@ class BackupFunctionsMixIn:
         if 'counter_' in stress_cmd:
             self._create_counter_table()
 
-        if 'compression' in stress_cmd:
-            if 'keyspace_name' not in params:
-                compression_prefix = re.search('compression=(.*)Compressor', stress_cmd).group(1)
-                keyspace_name = "keyspace_{}".format(compression_prefix.lower())
-                params.update({'keyspace_name': keyspace_name})
+        if 'compression' in stress_cmd and 'keyspace_name' not in params:
+            compression_prefix = re.search('compression=(.*)Compressor', stress_cmd)[1]
+            keyspace_name = f"keyspace_{compression_prefix.lower()}"
+            params.update({'keyspace_name': keyspace_name})
 
         return params
 
     @staticmethod
     def _get_keyspace_name(ks_number, keyspace_pref='keyspace'):
-        return '{}{}'.format(keyspace_pref, ks_number)
+        return f'{keyspace_pref}{ks_number}'
 
     def _run_all_stress_cmds(self, stress_queue, params):
         stress_cmds = params['stress_cmd']
@@ -241,7 +240,7 @@ class BackupFunctionsMixIn:
             self._parse_stress_cmd(stress_cmd, params)
 
             # Run all stress commands
-            self.log.debug('stress cmd: {}'.format(stress_cmd))
+            self.log.debug(f'stress cmd: {stress_cmd}')
             if stress_cmd.startswith('scylla-bench'):
                 stress_queue.append(self.run_stress_thread_bench(stress_cmd=stress_cmd,
                                                                  stats_aggregate_cmds=False,
@@ -341,8 +340,11 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
                                         auth_token=self.monitors.mgmt_auth_token)
         # Test cluster attributes
         cluster_orig_name = mgr_cluster.name
-        mgr_cluster.update(name="{}_renamed".format(cluster_orig_name))
-        assert mgr_cluster.name == cluster_orig_name+"_renamed", "Cluster name wasn't changed after update command"
+        mgr_cluster.update(name=f"{cluster_orig_name}_renamed")
+        assert (
+            mgr_cluster.name == f"{cluster_orig_name}_renamed"
+        ), "Cluster name wasn't changed after update command"
+
         mgr_cluster.delete()
         mgr_cluster = manager_tool.add_cluster(self.CLUSTER_NAME, db_cluster=self.db_cluster,
                                                auth_token=self.monitors.mgmt_auth_token)
@@ -365,11 +367,14 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
 
     def _create_keyspace_and_basic_table(self, keyspace_name, strategy, table_name="example_table",
                                          replication_factor=1):
-        self.log.info("creating keyspace {}".format(keyspace_name))
+        self.log.info(f"creating keyspace {keyspace_name}")
         keyspace_existence = self.create_keyspace(keyspace_name, replication_factor, strategy)
         assert keyspace_existence, "keyspace creation failed"
         # Keyspaces without tables won't appear in the repair, so the must have one
-        self.log.info("creating the table {} in the keyspace {}".format(table_name, keyspace_name))
+        self.log.info(
+            f"creating the table {table_name} in the keyspace {keyspace_name}"
+        )
+
         self.create_table(table_name, keyspace_name=keyspace_name)
 
     def test_manager_sanity(self):
@@ -420,14 +425,17 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         InfoEvent(message="Sleep ended - Starting tests").publish()
         self._create_repair_and_alter_it_with_repair_control()
         load_results = stress_read_thread.get_results()
-        self.log.info('load={}'.format(load_results))
+        self.log.info(f'load={load_results}')
 
     def _create_repair_and_alter_it_with_repair_control(self):
         keyspace_to_be_repaired = "keyspace2"
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
-        mgr_cluster = manager_tool.add_cluster(name=self.CLUSTER_NAME + '_repair_control',
-                                               db_cluster=self.db_cluster,
-                                               auth_token=self.monitors.mgmt_auth_token)
+        mgr_cluster = manager_tool.add_cluster(
+            name=f'{self.CLUSTER_NAME}_repair_control',
+            db_cluster=self.db_cluster,
+            auth_token=self.monitors.mgmt_auth_token,
+        )
+
         # writing 292968720 rows, equal to the amount of data written in the prepare (around 100gb per node),
         # to create a large data fault and therefore a longer running repair
         self.create_missing_rows_in_cluster(create_missing_rows_in_multiple_nodes=True,
@@ -465,7 +473,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         with self.subTest('test_intensity_and_parallel'):
             self.test_intensity_and_parallel(fault_multiple_nodes=fault_multiple_nodes)
         load_results = stress_read_thread.get_results()
-        self.log.info('load={}'.format(load_results))
+        self.log.info(f'load={load_results}')
 
     def get_email_data(self):
         self.log.info("Prepare data for email")
@@ -528,7 +536,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             or manager_tool.add_cluster(name=self.CLUSTER_NAME, db_cluster=self.db_cluster,
                                         auth_token=self.monitors.mgmt_auth_token)
         tables = self.create_ks_and_tables(10, 100)
-        self.log.debug('tables list = {}'.format(tables))
+        self.log.debug(f'tables list = {tables}')
         # TODO: insert data to those tables
         backup_task = mgr_cluster.create_backup_task(location_list=self.locations)
         backup_task_status = backup_task.wait_and_get_final_status(timeout=1500)
@@ -546,7 +554,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         try:
             mgr_cluster.create_backup_task(location_list=[f'{location}/path_testing/' for location in self.locations])
         except ScyllaManagerError as error:
-            self.log.info('Expected to fail - error: {}'.format(error))
+            self.log.info(f'Expected to fail - error: {error}')
         self.log.info('finishing test_backup_location_with_path')
 
     def test_backup_rate_limit(self):
@@ -556,12 +564,12 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             or manager_tool.add_cluster(name=self.CLUSTER_NAME, db_cluster=self.db_cluster,
                                         auth_token=self.monitors.mgmt_auth_token)
         rate_limit_list = [f'{dc}:{random.randint(15, 25)}' for dc in self.get_all_dcs_names()]
-        self.log.info('rate limit will be {}'.format(rate_limit_list))
+        self.log.info(f'rate limit will be {rate_limit_list}')
         backup_task = mgr_cluster.create_backup_task(location_list=self.locations, rate_limit_list=rate_limit_list)
         task_status = backup_task.wait_and_get_final_status(timeout=18000)
         assert task_status == TaskStatus.DONE, \
             f"Task {backup_task.id} did not end successfully:\n{backup_task.detailed_progress}"
-        self.log.info('backup task finished with status {}'.format(task_status))
+        self.log.info(f'backup task finished with status {task_status}')
         # TODO: verify that the rate limit is as set in the cmd
         self.verify_backup_success(mgr_cluster=mgr_cluster, backup_task=backup_task)
         self.log.info('finishing test_backup_rate_limit')
@@ -582,7 +590,6 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
 
     @staticmethod
     def _get_all_snapshot_files_gce(cluster_id, bucket_name):
-        file_set = set()
         gcp_credentials = KeyStore().get_gcp_credentials()
         gce_driver = libcloud.storage.providers.get_driver(libcloud.storage.types.Provider.GOOGLE_STORAGE)
         driver = gce_driver(gcp_credentials["project_id"] + "@appspot.gserviceaccount.com",
@@ -590,22 +597,17 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
                             project=gcp_credentials["project_id"])
         container = driver.get_container(container_name=bucket_name)
         dir_listing = driver.list_container_objects(container, ex_prefix=f'backup/sst/cluster/{cluster_id}')
-        for listing_object in dir_listing:
-            file_set.add(listing_object.name)
         # Unlike S3, if no files match the prefix, no error will occur
-        return file_set
+        return {listing_object.name for listing_object in dir_listing}
 
     @staticmethod
     def _get_all_snapshot_files_azure(cluster_id, bucket_name):
-        file_set = set()
         credentials = KeyStore().get_backup_azure_blob_credentials()
         azure_driver_object = libcloud.storage.providers.get_driver(libcloud.storage.types.Provider.AZURE_BLOBS)
         driver = azure_driver_object(key=credentials["account"], secret=credentials["key"])
         container = driver.get_container(container_name=bucket_name)
         dir_listing = driver.list_container_objects(container, ex_prefix=f'backup/sst/cluster/{cluster_id}')
-        for listing_object in dir_listing:
-            file_set.add(listing_object.name)
-        return file_set
+        return {listing_object.name for listing_object in dir_listing}
 
     def _get_all_snapshot_files(self, cluster_id):
         bucket_name = self.params.get('backup_bucket_location').split()[0]
@@ -679,10 +681,13 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         mgr_cluster.update(client_encrypt=True)
         repair_task.start()
         sleep = 40
-        self.log.debug('Sleep {} seconds, waiting for health-check task to run by schedule on first time'.format(sleep))
+        self.log.debug(
+            f'Sleep {sleep} seconds, waiting for health-check task to run by schedule on first time'
+        )
+
         time.sleep(sleep)
         healthcheck_task = mgr_cluster.get_healthcheck_task()
-        self.log.debug("Health-check task history is: {}".format(healthcheck_task.history))
+        self.log.debug(f"Health-check task history is: {healthcheck_task.history}")
         dict_host_health = mgr_cluster.get_hosts_health()
         for host_health in dict_host_health.values():
             assert host_health.ssl == HostSsl.ON, "Not all hosts ssl is 'ON'"
@@ -701,24 +706,34 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             host_data for host_data in self.get_cluster_hosts_with_ips() if
             host_data[1] != self.get_cluster_hosts_ip()[0]][0]
         sleep = 40
-        self.log.debug('Sleep {} seconds, waiting for health-check task to run by schedule on first time'.format(sleep))
+        self.log.debug(
+            f'Sleep {sleep} seconds, waiting for health-check task to run by schedule on first time'
+        )
+
         time.sleep(sleep)
         healthcheck_task = mgr_cluster.get_healthcheck_task()
-        self.log.debug("Health-check task history is: {}".format(healthcheck_task.history))
+        self.log.debug(f"Health-check task history is: {healthcheck_task.history}")
         dict_host_health = mgr_cluster.get_hosts_health()
         for host_health in dict_host_health.values():
             assert host_health.status == HostStatus.UP, "Not all hosts status is 'UP'"
             assert host_health.rest_status == HostRestStatus.UP, "Not all hosts REST status is 'UP'"
         # Check for sctool status change after scylla-server down
         other_host.stop_scylla_server()
-        self.log.debug("Health-check next run is: {}".format(healthcheck_task.next_run))
-        self.log.debug('Sleep {} seconds, waiting for health-check task to run after node down'.format(sleep))
+        self.log.debug(f"Health-check next run is: {healthcheck_task.next_run}")
+        self.log.debug(
+            f'Sleep {sleep} seconds, waiting for health-check task to run after node down'
+        )
+
         time.sleep(sleep)
         dict_host_health = mgr_cluster.get_hosts_health()
-        assert dict_host_health[other_host_ip].status == HostStatus.DOWN, "Host: {} status is not 'DOWN'".format(
-            other_host_ip)
-        assert dict_host_health[other_host_ip].rest_status == HostRestStatus.DOWN, "Host: {} REST status is not 'DOWN'".format(
-            other_host_ip)
+        assert (
+            dict_host_health[other_host_ip].status == HostStatus.DOWN
+        ), f"Host: {other_host_ip} status is not 'DOWN'"
+
+        assert (
+            dict_host_health[other_host_ip].rest_status == HostRestStatus.DOWN
+        ), f"Host: {other_host_ip} REST status is not 'DOWN'"
+
         other_host.start_scylla_server()
 
         mgr_cluster.delete()  # remove cluster at the end of the test
@@ -796,11 +811,11 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         assert manager_from_version[0] != manager_tool.sctool.version[0], "Manager version not changed after upgrade."
         # verify all repair tasks exist
         for repair_task in repair_task_list:
-            self.log.debug("{} status: {}".format(repair_task.id, repair_task.status))
+            self.log.debug(f"{repair_task.id} status: {repair_task.status}")
 
         self.log.info('Running a new repair task after upgrade')
         repair_task = mgr_cluster.create_repair_task()
-        self.log.debug("{} status: {}".format(repair_task.id, repair_task.status))
+        self.log.debug(f"{repair_task.id} status: {repair_task.status}")
         self.log.info('finishing test_manager_upgrade')
 
     def test_manager_rollback_upgrade(self):
@@ -829,10 +844,12 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         self._create_keyspace_and_basic_table(self.LOCALSTRATEGY_KEYSPACE_NAME, "LocalStrategy")
         repair_task = mgr_cluster.create_repair_task()
         task_final_status = repair_task.wait_and_get_final_status(timeout=7200)
-        assert task_final_status == TaskStatus.DONE, 'Task: {} final status is: {}.'.format(repair_task.id,
-                                                                                            str(repair_task.status))
-        self.log.info('Task: {} is done.'.format(repair_task.id))
-        self.log.debug("sctool version is : {}".format(manager_tool.sctool.version))
+        assert (
+            task_final_status == TaskStatus.DONE
+        ), f'Task: {repair_task.id} final status is: {str(repair_task.status)}.'
+
+        self.log.info(f'Task: {repair_task.id} is done.')
+        self.log.debug(f"sctool version is : {manager_tool.sctool.version}")
 
         expected_keyspaces_to_be_repaired = ["system_auth", "system_distributed", "system_traces",  # pylint: disable=invalid-name
                                              self.SIMPLESTRATEGY_KEYSPACE_NAME]
@@ -840,11 +857,14 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         self.log.info("Looking in the repair output for all of the required keyspaces")
         for keyspace_name in expected_keyspaces_to_be_repaired:
             keyspace_repair_percentage = per_keyspace_progress.get(keyspace_name, None)
-            assert keyspace_repair_percentage is not None, \
-                "The keyspace {} was not included in the repair!".format(keyspace_name)
-            assert keyspace_repair_percentage == 100, \
-                "The repair of the keyspace {} stopped at {}%".format(
-                    keyspace_name, keyspace_repair_percentage)
+            assert (
+                keyspace_repair_percentage is not None
+            ), f"The keyspace {keyspace_name} was not included in the repair!"
+
+            assert (
+                keyspace_repair_percentage == 100
+            ), f"The repair of the keyspace {keyspace_name} stopped at {keyspace_repair_percentage}%"
+
 
         localstrategy_keyspace_percentage = per_keyspace_progress.get(self.LOCALSTRATEGY_KEYSPACE_NAME, None)
         assert localstrategy_keyspace_percentage is None, \
@@ -898,12 +918,16 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
             directory_size_result = db_node.remoter.sudo(f"du -h --max-depth=0 {directoy_path}")
             result = db_node.remoter.sudo(f'rm -rf {directoy_path}')
             if result.stderr:
-                raise FilesNotCorrupted('Files were not corrupted. CorruptThenRepair nemesis can\'t be run. '
-                                        'Error: {}'.format(result))
+                raise FilesNotCorrupted(
+                    f"Files were not corrupted. CorruptThenRepair nemesis can\'t be run. Error: {result}"
+                )
+
             if directory_size_result.stdout:
                 directory_size = directory_size_result.stdout[:directory_size_result.stdout.find("\t")]
-                self.log.debug("Removed the directory of keyspace {} from node {}\nThe size of the directory is {}".format(
-                    keyspace_name, db_node, directory_size))
+                self.log.debug(
+                    f"Removed the directory of keyspace {keyspace_name} from node {db_node}\nThe size of the directory is {directory_size}"
+                )
+
 
         finally:
             db_node.start_scylla_server(verify_up=True, verify_down=False)
@@ -923,7 +947,10 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         # We can't shut down node 1 since it's the default contact point of the stress command, and we have no way
         # of changing that. As such, we skip it.
         for node in self.db_cluster.nodes[1:]:
-            self.log.info("inserting {} rows to every node except {}".format(num_of_rows_per_insertion, node.name))
+            self.log.info(
+                f"inserting {num_of_rows_per_insertion} rows to every node except {node.name}"
+            )
+
             end_of_range = start_of_range + num_of_rows_per_insertion - 1
             node.stop_scylla_server(verify_up=False, verify_down=True)
             stress_thread = self.run_stress_thread(stress_cmd=stress_command_template.format(num_of_rows_per_insertion,
@@ -931,7 +958,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
                                                                                              start_of_range,
                                                                                              end_of_range))
             time.sleep(15)
-            self.log.info('load={}'.format(stress_thread.get_results()))
+            self.log.info(f'load={stress_thread.get_results()}')
             node.start_scylla_server(verify_up=True, verify_down=False)
             start_of_range = end_of_range + 1
         with self.db_cluster.cql_connection_patient(self.db_cluster.nodes[0]) as session:
@@ -955,10 +982,11 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
         InfoEvent(message='starting test_intensity_and_parallel').publish()
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
         mgr_cluster = manager_tool.add_cluster(
-            name=self.CLUSTER_NAME + '_intensity_and_parallel',
+            name=f'{self.CLUSTER_NAME}_intensity_and_parallel',
             db_cluster=self.db_cluster,
             auth_token=self.monitors.mgmt_auth_token,
         )
+
 
         InfoEvent(message="Starting faulty load (to be repaired)").publish()
         self.create_missing_rows_in_cluster(create_missing_rows_in_multiple_nodes=fault_multiple_nodes,
@@ -1014,7 +1042,7 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
 
     def _suspend_and_resume_task_template(self, task_type):
         # task types: backup/repair
-        self.log.info('starting test_suspend_and_resume_{}'.format(task_type))
+        self.log.info(f'starting test_suspend_and_resume_{task_type}')
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
         mgr_cluster = manager_tool.get_cluster(cluster_name=self.CLUSTER_NAME) \
             or manager_tool.add_cluster(name=self.CLUSTER_NAME, db_cluster=self.db_cluster,
@@ -1032,12 +1060,15 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
                 f"task {suspendable_task.id} failed to reach status {TaskStatus.STOPPED}"
         assert suspendable_task.wait_for_status(list_status=[TaskStatus.DONE], timeout=1200, step=10), \
             f"task {suspendable_task.id} failed to reach status {TaskStatus.DONE}"
-        self.log.info('finishing test_suspend_and_resume_{}'.format(task_type))
+        self.log.info(f'finishing test_suspend_and_resume_{task_type}')
 
     def _template_suspend_with_on_resume_start_tasks_flag(self, wait_for_duration):
         suspension_duration = 75
         test_name_filler = "after_duration_passed" if wait_for_duration else "before_duration_passed"
-        self.log.info('starting test_suspend_with_on_resume_start_tasks_flag_{}'.format(test_name_filler))
+        self.log.info(
+            f'starting test_suspend_with_on_resume_start_tasks_flag_{test_name_filler}'
+        )
+
         manager_tool = mgmt.get_scylla_manager_tool(manager_node=self.monitors.nodes[0])
         mgr_cluster = manager_tool.get_cluster(cluster_name=self.CLUSTER_NAME) \
             or manager_tool.add_cluster(name=self.CLUSTER_NAME, db_cluster=self.db_cluster,
@@ -1065,13 +1096,17 @@ class MgmtCliTest(BackupFunctionsMixIn, ClusterTester):
                 suspendable_task.wait_for_status(list_status=TaskStatus.all_statuses() - {TaskStatus.STOPPED},
                                                  timeout=1200, step=10)
             except RetryError:
-                self.log.debug("As expected, the task was continued after the resume. It specifically reached the "
-                               "{} status".format(suspendable_task.status))
+                self.log.debug(
+                    f"As expected, the task was continued after the resume. It specifically reached the {suspendable_task.status} status"
+                )
+
             else:
                 raise ScyllaManagerError(f"After the cluster was resumed (while resuming BEFORE the suspend duration "
                                          f"has passed), task {suspendable_task.id} failed to stay in status "
                                          f"{TaskStatus.STOPPED}, but instead reached {suspendable_task.status}")
-        self.log.info('finishing test_suspend_with_on_resume_start_tasks_flag_{}'.format(test_name_filler))
+        self.log.info(
+            f'finishing test_suspend_with_on_resume_start_tasks_flag_{test_name_filler}'
+        )
 
     def test_suspend_and_resume_without_starting_tasks(self):
         self.log.info('starting test_suspend_and_resume_without_starting_tasks')

@@ -67,8 +67,7 @@ class AzureNode(cluster.BaseNode):
         return super()._set_keep_alive()
 
     def _refresh_instance_state(self):
-        ip_tuple = (self._instance.public_ip_address, self._instance.private_ip_address)
-        return ip_tuple
+        return self._instance.public_ip_address, self._instance.private_ip_address
 
     @property
     def region(self):
@@ -184,18 +183,21 @@ class AzureCluster(cluster.BaseCluster):   # pylint: disable=too-many-instance-a
             node.init()
             return node
         except Exception as ex:
-            raise CreateAzureNodeError('Failed to create node: %s' % ex) from ex
+            raise CreateAzureNodeError(f'Failed to create node: {ex}') from ex
 
     def _create_instances(self, count, dc_idx=0) -> List[VmInstance]:
         region = self._definition_builder.regions[dc_idx]
         assert region, "no region provided, please add `azure_region_name` param"
         pricing_model = PricingModel.SPOT if 'spot' in self.instance_provision else PricingModel.ON_DEMAND
-        definitions = []
-        for node_index in range(self._node_index + 1, self._node_index + count + 1):
-            definitions.append(
-                self._definition_builder.build_instance_definition(
-                    region=region, node_type=self.node_type, index=node_index)
+        definitions = [
+            self._definition_builder.build_instance_definition(
+                region=region, node_type=self.node_type, index=node_index
             )
+            for node_index in range(
+                self._node_index + 1, self._node_index + count + 1
+            )
+        ]
+
         return provision_instances_with_fallback(self.provisioners[dc_idx], definitions=definitions, pricing_model=pricing_model,
                                                  fallback_on_demand=self.params.get("instance_provision_fallback_on_demand"))
 
@@ -279,7 +281,7 @@ class MonitorSetAzure(cluster.BaseMonitorSet, AzureCluster):
         node_prefix = cluster.prepend_user_prefix(user_prefix, 'monitor-node')
         cluster_prefix = cluster.prepend_user_prefix(user_prefix, 'monitor-set')
 
-        targets = targets if targets else {}
+        targets = targets or {}
         cluster.BaseMonitorSet.__init__(self,
                                         targets=targets,
                                         params=params)

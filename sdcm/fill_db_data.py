@@ -3027,8 +3027,7 @@ class FillDatabaseData(ClusterTester):
     @staticmethod
     def _get_table_name_from_query(query):
         regexp = re.compile(r"create table (?P<table_name>[a-z0-9_]+)\s?", re.MULTILINE | re.IGNORECASE)
-        match = regexp.search(query)
-        if match:
+        if match := regexp.search(query):
             return match.groupdict()["table_name"]
         return None
 
@@ -3075,8 +3074,6 @@ class FillDatabaseData(ClusterTester):
             self.cql_insert_data_to_simple_tables(session, rows=insert_rows)
 
     def _enable_cdc(self, item, create_table):
-        cdc_properties = "cdc = {'enabled': true, 'preimage': true, 'postimage': true, 'ttl': 36000}"
-
         if item.get("no_cdc"):
             self.log.warning("Skip adding cdc enabling properties due %s", item['no_cdc'])
             return create_table
@@ -3084,6 +3081,8 @@ class FillDatabaseData(ClusterTester):
         if "CREATE TABLE" in create_table.upper() and "COUNTER" not in create_table.upper():
             create_table = create_table.replace(";", "")
             table_name = self._get_table_name_from_query(create_table)
+            cdc_properties = "cdc = {'enabled': true, 'preimage': true, 'postimage': true, 'ttl': 36000}"
+
             if " WITH " in create_table.upper():
                 create_table = f"{create_table} AND {cdc_properties}"
             else:
@@ -3100,7 +3099,7 @@ class FillDatabaseData(ClusterTester):
         self.log.info('Start table creation')
         # Run through the list of items and create all tables
         for test_num, item in enumerate(self.all_verification_items):
-            test_name = item.get('name', 'Test #' + str(test_num))
+            test_name = item.get('name', f'Test #{str(test_num)}')
             # Check if current cluster version supports non-frozed UDT
             if 'skip_condition' in item and 'non_frozen_udt' in item['skip_condition'] \
                     and not eval(item['skip_condition']):
@@ -3129,8 +3128,7 @@ class FillDatabaseData(ClusterTester):
                         self.db_cluster.wait_for_schema_agreement()
                         if 'CREATE TYPE' in create_table.upper():
                             time.sleep(15)
-                    for truncate in item['truncates']:
-                        truncates.append(truncate)
+                    truncates.extend(iter(item['truncates']))
             else:
                 self.all_verification_items[test_num]['skip_condition'] = False
         # Sleep a while after creating test tables to avoid schema disagreement.
@@ -3194,7 +3192,7 @@ class FillDatabaseData(ClusterTester):
         # Run through the list of items and create all tables
         self.log.info('Start table truncation')
         for test_num, item in enumerate(self.all_verification_items):
-            test_name = item.get('name', 'Test #' + str(test_num))
+            test_name = item.get('name', f'Test #{str(test_num)}')
             if not item['skip'] and ('skip_condition' not in item or eval(str(item['skip_condition']))):
                 for truncate in item['truncates']:
                     with self._execute_and_log(f'Truncated table for test "{test_name}" in {{}} seconds'):
@@ -3204,7 +3202,7 @@ class FillDatabaseData(ClusterTester):
         self.log.info('Start to populate data into tables')
         # pylint: disable=too-many-nested-blocks
         for test_num, item in enumerate(self.all_verification_items):
-            test_name = item.get('name', 'Test #' + str(test_num))
+            test_name = item.get('name', f'Test #{str(test_num)}')
             # TODO: fix following condition to make "skip_condition" really skip stuff
             # when it is True, not False as it is now.
             # As of now it behaves as "run_condition".
@@ -3281,7 +3279,7 @@ class FillDatabaseData(ClusterTester):
         self.log.info('Start to running queries')
         # pylint: disable=too-many-branches,too-many-nested-blocks
         for test_num, item in enumerate(self.all_verification_items):
-            test_name = item.get('name', 'Test #' + str(test_num))
+            test_name = item.get('name', f'Test #{str(test_num)}')
             # Some queries contains statement of switch keyspace, reset keyspace at the beginning
             session.set_keyspace(self.base_ks)
             # TODO: fix following condition to make "skip_condition" really skip stuff

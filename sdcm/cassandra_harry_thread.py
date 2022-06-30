@@ -72,11 +72,13 @@ class CassandraHarryThread:
 
     def get_stress_results_bench(self):
         ret = []
-        results = []
-
         LOGGER.debug('Wait for stress threads results')
-        for future in concurrent.futures.as_completed(self.results_futures, timeout=self.timeout):
-            results.append(future.result())
+        results = [
+            future.result()
+            for future in concurrent.futures.as_completed(
+                self.results_futures, timeout=self.timeout
+            )
+        ]
 
         for _, result in results:
             if not result:
@@ -85,8 +87,7 @@ class CassandraHarryThread:
             output = result.stdout + result.stderr
             try:
                 lines = output.splitlines()
-                node_cs_res = self._parse_harry_summary(lines)  # pylint: disable=protected-access
-                if node_cs_res:
+                if node_cs_res := self._parse_harry_summary(lines):
                     ret.append(node_cs_res)
             except Exception as exc:  # pylint: disable=broad-except
                 CassandraHarryEvent.error(node="",
@@ -97,12 +98,15 @@ class CassandraHarryThread:
 
     def verify_results(self):
         harry_summary = []
-        results = []
         errors = []
 
         LOGGER.debug('Wait for stress threads results')
-        for future in concurrent.futures.as_completed(self.results_futures, timeout=self.timeout):
-            results.append(future.result())
+        results = [
+            future.result()
+            for future in concurrent.futures.as_completed(
+                self.results_futures, timeout=self.timeout
+            )
+        ]
 
         for node, result in results:
             if not result:
@@ -111,14 +115,12 @@ class CassandraHarryThread:
             output = result.stdout + result.stderr
 
             lines = output.splitlines()
-            node_cs_res = self._parse_harry_summary(lines)  # pylint: disable=protected-access
-
-            if node_cs_res:
+            if node_cs_res := self._parse_harry_summary(lines):
                 harry_summary.append(node_cs_res)
 
             for line in lines:
                 if 'java.io.IOException' in line:
-                    errors += ['%s: %s' % (node, line.strip())]
+                    errors += [f'{node}: {line.strip()}']
 
         return harry_summary, errors
 
@@ -126,8 +128,13 @@ class CassandraHarryThread:
         if self.round_robin:
             loaders = [self.loader_set.get_loader()]
         else:
-            loaders = self.loader_set.nodes if not self.use_single_loader else [self.loader_set.nodes[0]]
-        LOGGER.debug("Round-Robin through loaders, Selected loader is {} ".format(loaders))
+            loaders = (
+                [self.loader_set.nodes[0]]
+                if self.use_single_loader
+                else self.loader_set.nodes
+            )
+
+        LOGGER.debug(f"Round-Robin through loaders, Selected loader is {loaders} ")
 
         self.max_workers = (os.cpu_count() or 1) * 5
         LOGGER.debug("Starting %d cassandra-harry Worker threads", self.max_workers)
@@ -182,16 +189,15 @@ class CassandraHarryThread:
         return node, result
 
     @staticmethod
-    def _parse_harry_summary(lines):  # pylint: disable=too-many-branches
+    def _parse_harry_summary(lines):    # pylint: disable=too-many-branches
         """
         Currently we only check if it succeeds or not.
         A succeed sample:
 
         INFO  [pool-6-thread-1] instance_id_IS_UNDEFINED 2021-01-19 13:46:49,835 Runner.java:255 - Completed
         """
-        results = {}
-        if any(['Runner.java:255 - Completed' in line for line in lines]):  # pylint: disable=use-a-generator
-            results['status'] = 'completed'
-        else:
-            results['status'] = 'failed'
-        return results
+        return {
+            'status': 'completed'
+            if any('Runner.java:255 - Completed' in line for line in lines)
+            else 'failed'
+        }

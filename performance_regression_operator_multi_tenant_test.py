@@ -38,7 +38,7 @@ class ScyllaClusterStats(PerformanceRegressionTest):
         self.create_stats = self.params.get(key='store_perf_results')
         self.status = "RUNNING"
         self.cluster_index = str(cluster_index)
-        self._test_id = self.test_config.test_id() + f"--{cluster_index}"
+        self._test_id = f"{self.test_config.test_id()}--{cluster_index}"
         self._test_index = self.get_str_index()
         self.create_test_stats()
         self.start_time = self.get_test_start_time()
@@ -47,10 +47,10 @@ class ScyllaClusterStats(PerformanceRegressionTest):
         return f"k8s-perf-{self.db_cluster.k8s_cluster.tenants_number}-tenants"
 
     def id(self):  # pylint: disable=invalid-name
-        return self.test_config.test_id() + f"-{self._test_index}"
+        return f"{self.test_config.test_id()}-{self._test_index}"
 
     def __str__(self) -> str:
-        return self._test_index + f"--{self.cluster_index}"
+        return f"{self._test_index}--{self.cluster_index}"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -87,10 +87,13 @@ class PerformanceRegressionOperatorMultiTenantTest(PerformanceRegressionTest):
                 if not isinstance(current_stress_cmd, list):
                     continue
                 # NOTE: 'prepare_write_cmd' is allowed to be list of strs
-                if stress_cmd_param == 'prepare_write_cmd':
-                    if not all((isinstance(current_stress_cmd_element, list)
-                                for current_stress_cmd_element in current_stress_cmd)):
-                        continue
+                if stress_cmd_param == 'prepare_write_cmd' and not all(
+                    (
+                        isinstance(current_stress_cmd_element, list)
+                        for current_stress_cmd_element in current_stress_cmd
+                    )
+                ):
+                    continue
                 self.scylla_clusters_stats[i].params[stress_cmd_param] = current_stress_cmd[i]
 
     def run_fstrim_on_all_db_nodes(self):
@@ -122,11 +125,11 @@ class PerformanceRegressionOperatorMultiTenantTest(PerformanceRegressionTest):
             if self.params.get('round_robin'):
                 self.log.debug(
                     "'%s' DB cluster: Populating data using round_robin", db_cluster_name)
-                params.update({'stress_num': 1, 'round_robin': True})
+                params |= {'stress_num': 1, 'round_robin': True}
             for stress_cmd in prepare_write_cmd:
-                params.update({'stress_cmd': stress_cmd})
+                params['stress_cmd'] = stress_cmd
                 # Run all stress commands
-                params.update(dict(stats_aggregate_cmds=False))
+                params |= dict(stats_aggregate_cmds=False)
                 self.log.debug("'%s' DB cluster: RUNNING stress cmd: %s",
                                db_cluster_name, stress_cmd)
                 stress_queue.append(scylla_cluster_stats.run_stress_thread(**params))

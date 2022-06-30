@@ -70,10 +70,13 @@ def get_pods_without_probe(db_cluster: ScyllaPodCluster,
     pods = db_cluster.k8s_cluster.kubectl(f'get pods -A -l "{selector}" -o yaml')
     pods_without_probes = []
     for pod in yaml.safe_load(pods.stdout)["items"]:
-        for container in pod.get("spec", {}).get("containers", []):
-            if container['name'] == container_name and not container.get(probe_type):
-                pods_without_probes.append(
-                    f"pod: {pod['metadata']['name']}, container: {container['name']}")
+        pods_without_probes.extend(
+            f"pod: {pod['metadata']['name']}, container: {container['name']}"
+            for container in pod.get("spec", {}).get("containers", [])
+            if container['name'] == container_name
+            and not container.get(probe_type)
+        )
+
     return pods_without_probes
 
 
@@ -110,21 +113,27 @@ def wait_for_resource_absence(db_cluster: ScyllaPodCluster,  # pylint: disable=t
 
 
 def get_pods_and_statuses(db_cluster: ScyllaPodCluster, namespace: str, label: str = None):
-    pods = db_cluster.k8s_cluster.kubectl(f"get pods {'-l ' + label if label else ''} -o yaml", namespace=namespace)
+    pods = db_cluster.k8s_cluster.kubectl(
+        f"get pods {f'-l {label}' if label else ''} -o yaml",
+        namespace=namespace,
+    )
+
     return [{"name": pod["metadata"]["name"], "status": pod["status"]["phase"]} for pod in
             yaml.safe_load(pods.stdout)["items"] if pod]
 
 
 def get_pod_storage_capacity(db_cluster: ScyllaPodCluster, namespace: str, pod_name: str = None, label: str = None):
     pods_storage_capacity = []
-    label = " -l " + label if label else ''
+    label = f" -l {label}" if label else ''
     persistent_volume_info = db_cluster.k8s_cluster.kubectl(f"get pvc {label} -o yaml", namespace=namespace)
-    for pod in yaml.safe_load(persistent_volume_info.stdout)["items"]:
-        if pod_name and pod_name not in pod["metadata"]["name"]:
-            continue
-
-        pods_storage_capacity.append({"name": pod["metadata"]["name"],
-                                      "capacity": pod["status"]["capacity"]["storage"]})
+    pods_storage_capacity.extend(
+        {
+            "name": pod["metadata"]["name"],
+            "capacity": pod["status"]["capacity"]["storage"],
+        }
+        for pod in yaml.safe_load(persistent_volume_info.stdout)["items"]
+        if not pod_name or pod_name in pod["metadata"]["name"]
+    )
 
     return pods_storage_capacity
 

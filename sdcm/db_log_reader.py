@@ -131,9 +131,12 @@ class DbLogReader(Process):
                         # backtrace:   0x3316f4d#012  0x2e2d177#012  0x189d397#012  0x2e76ea0#012  0x2e770af#012
                         # 0x2eaf065#012  0x2ebd68c#012  0x2e48d5d#012  /opt/scylladb/libreloc/libpthread.so.0+0x94e1#012
                         splitted_line = re.split("backtrace:", line, flags=re.IGNORECASE)
-                        for trace_line in splitted_line[1].split():
-                            if trace_line.startswith('0x') or 'scylladb/lib' in trace_line:
-                                one_line_backtrace.append(trace_line)
+                        one_line_backtrace.extend(
+                            trace_line
+                            for trace_line in splitted_line[1].split()
+                            if trace_line.startswith('0x')
+                            or 'scylladb/lib' in trace_line
+                        )
 
                     # for each line, if it matches a continuous event pattern,
                     # call the appropriate function with the class tied to that pattern
@@ -204,10 +207,13 @@ class DbLogReader(Process):
         # If the error is within 10 lines and the last isn't backtrace type, the backtrace would be
         # appended to the previous error.
         try:
-            if (self._last_error and
-                    backtrace['event'].line_number <= self._last_error.line_number + 20
-                    and not self._last_error.type == 'BACKTRACE'
-                    and backtrace['event'].type == 'BACKTRACE'):
+            if (
+                self._last_error
+                and backtrace['event'].line_number
+                <= self._last_error.line_number + 20
+                and self._last_error.type != 'BACKTRACE'
+                and backtrace['event'].type == 'BACKTRACE'
+            ):
                 self._last_error.raw_backtrace = "\n".join(backtrace['backtrace'])
                 backtrace['event'].dont_publish()
                 return False
@@ -231,7 +237,10 @@ class DbLogReader(Process):
         """
         # first try default location
         scylla_debug_info = '/usr/lib/debug/bin/scylla.debug'
-        results = self._remoter.run('[[ -f {} ]]'.format(scylla_debug_info), ignore_status=True)
+        results = self._remoter.run(
+            f'[[ -f {scylla_debug_info} ]]', ignore_status=True
+        )
+
         if results.ok:
             return scylla_debug_info
 
@@ -243,7 +252,10 @@ class DbLogReader(Process):
         # then look it up base on the build id
         if build_id := self.get_scylla_build_id():
             scylla_debug_info = "/usr/lib/debug/.build-id/{0}/{1}.debug".format(build_id[:2], build_id[2:])
-            results = self._remoter.run('[[ -f {} ]]'.format(scylla_debug_info), ignore_status=True)
+            results = self._remoter.run(
+                f'[[ -f {scylla_debug_info} ]]', ignore_status=True
+            )
+
             if results.ok:
                 return scylla_debug_info
 

@@ -76,12 +76,12 @@ class QueryLimitsTest(ClusterTester):
         self.loaders.run("sudo yum install -y libuv")
         # Copy payload to loader nodes
         self.loaders.send_file("queries-limits", self.payload)
-        self.loaders.run("chmod +x " + self.payload)
+        self.loaders.run(f"chmod +x {self.payload}")
 
     def test_connection_limits(self):
         ips = self.db_cluster.get_node_private_ips()
-        params = " --servers %s --duration 600 --queries 1000000" % (ips[0])
-        cmd = '%s %s' % (self.payload, params)
+        params = f" --servers {ips[0]} --duration 600 --queries 1000000"
+        cmd = f'{self.payload} {params}'
         result = self.loaders.nodes[0].remoter.run(cmd, ignore_status=True)
         if result.exit_status != 0:
             self.fail('Payload failed:\n%s' % result)

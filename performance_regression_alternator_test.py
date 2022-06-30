@@ -69,9 +69,7 @@ class PerformanceRegressionAlternatorTest(PerformanceRegressionTest):
                                 {fields});""")
 
     def preload_data(self):
-        # if test require a pre-population of data
-        prepare_write_cmd = self.params.get('prepare_write_cmd')
-        if prepare_write_cmd:
+        if prepare_write_cmd := self.params.get('prepare_write_cmd'):
             # create new document in ES with doc_id = test_id + timestamp
             # allow to correctly save results for future compare
             self.create_test_stats(sub_type='write-prepare', doc_id_with_timestamp=True)
@@ -83,17 +81,19 @@ class PerformanceRegressionAlternatorTest(PerformanceRegressionTest):
                     # Check if it should be round_robin across loaders
                     if self.params.get('round_robin'):
                         self.log.debug('Populating data using round_robin')
-                        params.update({'stress_num': 1, 'round_robin': True})
+                        params |= {'stress_num': 1, 'round_robin': True}
 
                     for stress_cmd in prepare_write_cmd:
-                        params.update({'stress_cmd': stress_cmd.replace('dynamodb', stress_type)})
+                        params['stress_cmd'] = stress_cmd.replace('dynamodb', stress_type)
 
                         # Run all stress commands
                         params.update(dict(stats_aggregate_cmds=False))
-                        self.log.debug('RUNNING stress cmd: {}'.format(stress_cmd.replace('dynamodb', stress_type)))
+                        self.log.debug(
+                            f"RUNNING stress cmd: {stress_cmd.replace('dynamodb', stress_type)}"
+                        )
+
                         stress_queue.append(self.run_stress_thread(**params))
 
-                # One stress cmd command
                 else:
                     stress_queue.append(self.run_stress_thread(stress_cmd=prepare_write_cmd.replace('dynamodb', stress_type), stress_num=1,
                                                                prefix='preload-', stats_aggregate_cmds=False))
@@ -242,21 +242,37 @@ class PerformanceRegressionAlternatorTest(PerformanceRegressionTest):
 
         self.run_fstrim_on_all_db_nodes()
         self._workload(
-            test_name=self.id() + '_read', sub_type='cql', stress_cmd=base_cmd_r, stress_num=stress_multiplier,
-            keyspace_num=1, is_alternator=False)
+            test_name=f'{self.id()}_read',
+            sub_type='cql',
+            stress_cmd=base_cmd_r,
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+            is_alternator=False,
+        )
+
 
         # run a workload without lwt as baseline
         self.alternator.set_write_isolation(node=node, isolation=alternator.enums.WriteIsolation.FORBID_RMW)
         self._workload(
-            test_name=self.id() + '_read', sub_type='without-lwt', stress_cmd=base_cmd_r, stress_num=stress_multiplier,
-            keyspace_num=1)
+            test_name=f'{self.id()}_read',
+            sub_type='without-lwt',
+            stress_cmd=base_cmd_r,
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+        )
+
 
         self.wait_no_compactions_running()
         # run a workload with lwt
         self.alternator.set_write_isolation(node=node, isolation=alternator.enums.WriteIsolation.ALWAYS_USE_LWT)
         self._workload(
-            test_name=self.id() + '_read', sub_type='with-lwt', stress_cmd=base_cmd_r, stress_num=stress_multiplier,
-            keyspace_num=1)
+            test_name=f'{self.id()}_read',
+            sub_type='with-lwt',
+            stress_cmd=base_cmd_r,
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+        )
+
         self.check_regression_with_baseline('cql')
 
         stress_multiplier = 1
@@ -264,22 +280,38 @@ class PerformanceRegressionAlternatorTest(PerformanceRegressionTest):
 
         self.wait_no_compactions_running()
         self._workload(
-            test_name=self.id() + '_write', sub_type='cql', stress_cmd=base_cmd_w + " -target 10000",
-            stress_num=stress_multiplier, keyspace_num=1, is_alternator=False)
+            test_name=f'{self.id()}_write',
+            sub_type='cql',
+            stress_cmd=f"{base_cmd_w} -target 10000",
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+            is_alternator=False,
+        )
+
 
         self.wait_no_compactions_running()
         # run a workload without lwt as baseline
         self.alternator.set_write_isolation(node=node, isolation=alternator.enums.WriteIsolation.FORBID_RMW)
         self._workload(
-            test_name=self.id() + '_write', sub_type='without-lwt', stress_cmd=base_cmd_w + " -target 10000",
-            stress_num=stress_multiplier, keyspace_num=1)
+            test_name=f'{self.id()}_write',
+            sub_type='without-lwt',
+            stress_cmd=f"{base_cmd_w} -target 10000",
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+        )
+
 
         self.wait_no_compactions_running(n=120)
         # run a workload with lwt
         self.alternator.set_write_isolation(node=node, isolation=alternator.enums.WriteIsolation.ALWAYS_USE_LWT)
         self._workload(
-            test_name=self.id() + '_write', sub_type='with-lwt', stress_cmd=base_cmd_w + " -target 3000",
-            stress_num=stress_multiplier, keyspace_num=1)
+            test_name=f'{self.id()}_write',
+            sub_type='with-lwt',
+            stress_cmd=f"{base_cmd_w} -target 3000",
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+        )
+
         self.check_regression_with_baseline('cql')
 
         stress_multiplier = 1
@@ -287,19 +319,37 @@ class PerformanceRegressionAlternatorTest(PerformanceRegressionTest):
         self.run_fstrim_on_all_db_nodes()
 
         self._workload(
-            test_name=self.id() + '_mixed', sub_type='cql', stress_cmd=base_cmd_m + " -target 10000",
-            stress_num=stress_multiplier, keyspace_num=1, is_alternator=False)
+            test_name=f'{self.id()}_mixed',
+            sub_type='cql',
+            stress_cmd=f"{base_cmd_m} -target 10000",
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+            is_alternator=False,
+        )
+
 
         self.wait_no_compactions_running()
         # run a workload without lwt as baseline
         self.alternator.set_write_isolation(node=node, isolation=alternator.enums.WriteIsolation.FORBID_RMW)
-        self._workload(test_name=self.id() + '_mixed', sub_type='without-lwt',
-                       stress_cmd=base_cmd_m + " -target 10000", stress_num=stress_multiplier, keyspace_num=1)
+        self._workload(
+            test_name=f'{self.id()}_mixed',
+            sub_type='without-lwt',
+            stress_cmd=f"{base_cmd_m} -target 10000",
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+        )
+
 
         self.wait_no_compactions_running()
         # run a workload with lwt
         self.alternator.set_write_isolation(node=node, isolation=alternator.enums.WriteIsolation.ALWAYS_USE_LWT)
-        self._workload(test_name=self.id() + '_mixed', sub_type='with-lwt',
-                       stress_cmd=base_cmd_m + " -target 5000", stress_num=stress_multiplier, keyspace_num=1)
+        self._workload(
+            test_name=f'{self.id()}_mixed',
+            sub_type='with-lwt',
+            stress_cmd=f"{base_cmd_m} -target 5000",
+            stress_num=stress_multiplier,
+            keyspace_num=1,
+        )
+
 
         self.check_regression_with_baseline('cql')

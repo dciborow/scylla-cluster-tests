@@ -46,14 +46,19 @@ class PhysicalMachineNode(cluster.BaseNode):
         # self.remoter.run('sudo hostnamectl set-hostname {}'.format(self.name))
         pass
 
-    def detect_disks(self, nvme=True):  # pylint: disable=unused-argument
+    def detect_disks(self, nvme=True):    # pylint: disable=unused-argument
         """
         Detect local disks
         """
         min_size = 50 * 1024 * 1024 * 1024  # 50gb
         result = self.remoter.run('lsblk -nbo KNAME,SIZE,MOUNTPOINT -s -d')
         lines = [line.split() for line in result.stdout.splitlines()]
-        disks = ['/dev/{}'.format(l[0]) for l in lines if l and int(l[1]) > min_size and len(l) == 2]
+        disks = [
+            f'/dev/{l[0]}'
+            for l in lines
+            if l and int(l[1]) > min_size and len(l) == 2
+        ]
+
         assert disks, 'Failed to find disks!'
         return disks
 
@@ -95,7 +100,7 @@ class PhysicalMachineCluster(cluster.BaseCluster):  # pylint: disable=abstract-m
     # pylint: disable=unused-argument,too-many-arguments
     def add_nodes(self, count, ec2_user_data='', dc_idx=0, rack=0, enable_auto_bootstrap=False):
         for node_index in range(count):
-            node_name = '%s-%s' % (self.node_prefix, node_index)
+            node_name = f'{self.node_prefix}-{node_index}'
             self.nodes.append(self._create_node(node_name,
                                                 self._node_public_ips[node_index],
                                                 self._node_private_ips[node_index]))

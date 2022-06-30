@@ -44,9 +44,10 @@ class KclStressThread(DockerBasedStressThread):  # pylint: disable=too-many-inst
             target_address = self.node_list[0].parent_cluster.get_node().ip_address
         else:
             target_address = self.node_list[0].ip_address
-        stress_cmd = f"./gradlew run --args=\' {self.stress_cmd.replace('hydra-kcl', '')} " \
-                     f"-e http://{target_address}:{self.params.get('alternator_port')} \'"
-        return stress_cmd
+        return (
+            f"./gradlew run --args=\' {self.stress_cmd.replace('hydra-kcl', '')} "
+            f"-e http://{target_address}:{self.params.get('alternator_port')} \'"
+        )
 
     def _run_stress(self, loader, loader_idx, cpu_idx):
         docker = RemoteDocker(loader, "scylladb/hydra-loaders:kcl-jdk8-20210526-ShardSyncStrategyType-PERIODIC",
@@ -55,8 +56,10 @@ class KclStressThread(DockerBasedStressThread):  # pylint: disable=too-many-inst
 
         if not os.path.exists(loader.logdir):
             os.makedirs(loader.logdir, exist_ok=True)
-        log_file_name = os.path.join(loader.logdir, 'kcl-l%s-c%s-%s.log' %
-                                     (loader_idx, cpu_idx, uuid.uuid4()))
+        log_file_name = os.path.join(
+            loader.logdir, f'kcl-l{loader_idx}-c{cpu_idx}-{uuid.uuid4()}.log'
+        )
+
         LOGGER.debug('kcl-stress local log: %s', log_file_name)
 
         LOGGER.debug("'running: %s", stress_cmd)
@@ -66,17 +69,17 @@ class KclStressThread(DockerBasedStressThread):  # pylint: disable=too-many-inst
         else:
             node_cmd = stress_cmd
 
-        node_cmd = 'cd /hydra-kcl && {}'.format(node_cmd)
+        node_cmd = f'cd /hydra-kcl && {node_cmd}'
 
         KclStressEvent.start(node=loader, stress_cmd=stress_cmd).publish()
 
         try:
-            result = docker.run(cmd=node_cmd,
-                                timeout=self.timeout + self.shutdown_timeout,
-                                log_file=log_file_name,
-                                )
+            return docker.run(
+                cmd=node_cmd,
+                timeout=self.timeout + self.shutdown_timeout,
+                log_file=log_file_name,
+            )
 
-            return result
 
         except Exception as exc:  # pylint: disable=broad-except
             errors_str = format_stress_cmd_error(exc)

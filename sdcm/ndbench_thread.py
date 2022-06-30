@@ -76,7 +76,7 @@ class NdBenchStatsPublisher(FileFollowerThread):
 
     @staticmethod
     def gauge_name(operation):
-        return 'collectd_ndbench_%s_gauge' % operation.replace('-', '_')
+        return f"collectd_ndbench_{operation.replace('-', '_')}_gauge"
 
     def set_metric(self, operation, name, value):
         metric = self.METRICS[self.gauge_name(operation)]
@@ -96,12 +96,11 @@ class NdBenchStatsPublisher(FileFollowerThread):
                 time.sleep(0.5)
                 continue
 
-            for _, line in enumerate(self.follow_file(self.ndbench_log_filename)):
+            for line in self.follow_file(self.ndbench_log_filename):
                 if self.stopped():
                     break
                 try:
-                    match = stat_regex.search(line)
-                    if match:
+                    if match := stat_regex.search(line):
                         for key, value in match.groupdict().items():
                             operation, name = key.split('_', 1)
                             self.set_metric(operation, name, float(value))
@@ -141,15 +140,16 @@ class NdBenchStressThread(DockerBasedStressThread):  # pylint: disable=too-many-
 
         NdBenchStressEvent.start(node=loader, stress_cmd=self.stress_cmd).publish()
 
-        with NdBenchStatsPublisher(loader, loader_idx, ndbench_log_filename=log_file_name), \
-                NdBenchStressEventsPublisher(node=loader, ndbench_log_filename=log_file_name):
+        with NdBenchStatsPublisher(loader, loader_idx, ndbench_log_filename=log_file_name), NdBenchStressEventsPublisher(node=loader, ndbench_log_filename=log_file_name):
             try:
-                docker_run_result = docker.run(cmd=node_cmd,
-                                               timeout=self.timeout + self.shutdown_timeout,
-                                               ignore_status=True,
-                                               log_file=log_file_name,
-                                               verbose=True)
-                return docker_run_result
+                return docker.run(
+                    cmd=node_cmd,
+                    timeout=self.timeout + self.shutdown_timeout,
+                    ignore_status=True,
+                    log_file=log_file_name,
+                    verbose=True,
+                )
+
             except Exception as exc:  # pylint: disable=broad-except
                 NdBenchStressEvent.failure(node=str(loader),
                                            stress_cmd=self.stress_cmd,

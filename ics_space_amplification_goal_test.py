@@ -86,21 +86,20 @@ class IcsSpaceAmplificationTest(LongevityTest):
         :return:
         """
         fs_size_metric = 'node_filesystem_size_bytes'
-        fs_size_metric_old = 'node_filesystem_size'
         node_capacity_query_postfix = generate_node_capacity_query_postfix(node)
         filesystem_capacity_query = f'{fs_size_metric}{node_capacity_query_postfix}'
         fs_size_res = self.prometheus_db.query(query=filesystem_capacity_query, start=int(time.time()) - 5,
                                                end=int(time.time()))
         assert fs_size_res, "No results from Prometheus"
         if not fs_size_res[0]:  # if no returned values - try the old metric names.
+            fs_size_metric_old = 'node_filesystem_size'
             filesystem_capacity_query = f'{fs_size_metric_old}{node_capacity_query_postfix}'
             self.log.debug("filesystem_capacity_query: %s", filesystem_capacity_query)
             fs_size_res = self.prometheus_db.query(query=filesystem_capacity_query, start=int(time.time()) - 5,
                                                    end=int(time.time()))
         assert fs_size_res[0], "Could not resolve capacity query result."
         self.log.debug("fs_size_res: %s", fs_size_res)
-        fs_size_gb = float(fs_size_res[0]["values"][0][1]) / float(GB_SIZE)
-        return fs_size_gb
+        return float(fs_size_res[0]["values"][0][1]) / float(GB_SIZE)
 
     def _get_max_used_capacity_over_time_gb(self, node, start_time) -> float:
         """
@@ -112,9 +111,16 @@ class IcsSpaceAmplificationTest(LongevityTest):
         fs_size_gb = self._get_filesystem_total_size_gb(node=node)
         end_time = time.time()
         time_interval_minutes = int(math.ceil((end_time - start_time) / 60))  # convert time to minutes and round up.
-        min_available_capacity_gb = min(
-            [int(val[1]) for val in
-             self._get_filesystem_available_size_list(node=node, start_time=start_time)]) / GB_SIZE
+        min_available_capacity_gb = (
+            min(
+                int(val[1])
+                for val in self._get_filesystem_available_size_list(
+                    node=node, start_time=start_time
+                )
+            )
+            / GB_SIZE
+        )
+
         max_used_capacity_gb = fs_size_gb - min_available_capacity_gb
         self.log.debug("The maximum used filesystem capacity of %s for the last %s minutes is: %s GB/ %s GB",
                        node.private_ip_address, time_interval_minutes, max_used_capacity_gb, fs_size_gb)
@@ -150,10 +156,10 @@ class IcsSpaceAmplificationTest(LongevityTest):
         """
         :rtype: dictionary with capacity per node-ip
         """
-        dict_nodes_used_capacity = {}
-        for node in self.db_cluster.nodes:
-            dict_nodes_used_capacity[node.private_ip_address] = self._get_used_capacity_gb(node=node)
-        return dict_nodes_used_capacity
+        return {
+            node.private_ip_address: self._get_used_capacity_gb(node=node)
+            for node in self.db_cluster.nodes
+        }
 
     def _alter_table_compaction(self, compaction_strategy=CompactionStrategy.INCREMENTAL, table_name='standard1',
                                 keyspace_name='keyspace1',
@@ -166,7 +172,7 @@ class IcsSpaceAmplificationTest(LongevityTest):
         base_query = f"ALTER TABLE {keyspace_name}.{table_name} WITH compaction = "
         dict_requested_compaction = {'class': compaction_strategy.value}
         if additional_compaction_params:
-            dict_requested_compaction.update(additional_compaction_params)
+            dict_requested_compaction |= additional_compaction_params
 
         full_alter_query = base_query + str(dict_requested_compaction)
         LOGGER.debug("Alter table query is: %s", full_alter_query)
@@ -185,13 +191,16 @@ class IcsSpaceAmplificationTest(LongevityTest):
                                                 """.format(yaml_file, tmp_yaml_file))
         for node in self.db_cluster.nodes:  # set compaction_enforce_min_threshold on all nodes
             node.remoter.run('sudo bash -cxe "%s"' % set_enforce_min_threshold)
-            self.log.debug("Scylla YAML configuration read from: {} {} is:".format(node.public_ip_address, yaml_file))
-            node.remoter.run('sudo cat {}'.format(yaml_file))
+            self.log.debug(
+                f"Scylla YAML configuration read from: {node.public_ip_address} {yaml_file} is:"
+            )
+
+            node.remoter.run(f'sudo cat {yaml_file}')
 
             node.stop_scylla_server()
             node.start_scylla_server()
 
-    def test_ics_space_amplification_goal(self):  # pylint: disable=too-many-locals
+    def test_ics_space_amplification_goal(self):    # pylint: disable=too-many-locals
         """
         (1) writing new data. wait for compactions to finish.
         (2) over-writing existing data.
@@ -223,7 +232,7 @@ class IcsSpaceAmplificationTest(LongevityTest):
                         f" {dict_nodes_capacity_before_overwrite_data}").publish()
             additional_compaction_params = {'min_threshold': min_threshold}
             if sag:
-                additional_compaction_params.update({'space_amplification_goal': sag})
+                additional_compaction_params['space_amplification_goal'] = sag
             # (3) Altering compaction with SAG=None,1.5,1.2,1.5,None
             self._alter_table_compaction(additional_compaction_params=additional_compaction_params)
             stress_queue = []

@@ -107,8 +107,7 @@ class GCENode(cluster.BaseNode):
         node_name = self._instance.name
         instance = self._instance_wait_safe(self._gce_service.ex_get_node, node_name)
         self._instance = instance
-        ip_tuple = (instance.public_ips, instance.private_ips)
-        return ip_tuple
+        return instance.public_ips, instance.private_ips
 
     @property
     def region(self):
@@ -226,24 +225,24 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
         self.log.debug("GCECluster constructor")
 
     def __str__(self):
-        identifier = 'GCE Cluster %s | ' % self.name
-        identifier += 'Image: %s | ' % os.path.basename(self._gce_image)
-        identifier += 'Root Disk: %s %s GB | ' % (self._gce_image_type, self._gce_image_size)
+        identifier = f'GCE Cluster {self.name} | '
+        identifier += f'Image: {os.path.basename(self._gce_image)} | '
+        identifier += f'Root Disk: {self._gce_image_type} {self._gce_image_size} GB | '
         if self._gce_n_local_ssd:
-            identifier += 'Local SSD: %s | ' % self._gce_n_local_ssd
+            identifier += f'Local SSD: {self._gce_n_local_ssd} | '
         if self._add_disks:
             for disk_type, disk_size in self._add_disks.items():
                 if int(disk_size):
-                    identifier += '%s: %s | ' % (disk_type, disk_size)
-        identifier += 'Type: %s' % self._gce_instance_type
+                    identifier += f'{disk_type}: {disk_size} | '
+        identifier += f'Type: {self._gce_instance_type}'
         return identifier
 
     def _get_disk_url(self, disk_type='pd-standard', dc_idx=0):
         project = self._gce_services[dc_idx].ex_get_project()
-        return "projects/%s/zones/%s/diskTypes/%s" % (project.name, self._gce_region_names[dc_idx], disk_type)
+        return f"projects/{project.name}/zones/{self._gce_region_names[dc_idx]}/diskTypes/{disk_type}"
 
     def _get_root_disk_struct(self, name, disk_type='pd-standard', dc_idx=0):
-        device_name = '%s-root-%s' % (name, disk_type)
+        device_name = f'{name}-root-{disk_type}'
         return {"type": "PERSISTENT",
                 "deviceName": device_name,
                 "initializeParams": {
@@ -257,7 +256,7 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
                 "autoDelete": True}
 
     def _get_local_ssd_disk_struct(self, name, index, interface='NVME', dc_idx=0):
-        device_name = '%s-data-local-ssd-%s' % (name, index)
+        device_name = f'{name}-data-local-ssd-{index}'
         return {"type": "SCRATCH",
                 "deviceName": device_name,
                 "initializeParams": {
@@ -267,7 +266,7 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
                 "autoDelete": True}
 
     def _get_persistent_disk_struct(self, name, disk_size, disk_type='pd-ssd', dc_idx=0):
-        device_name = '%s-data-%s' % (name, disk_type)
+        device_name = f'{name}-data-{disk_type}'
         return {"type": "PERSISTENT",
                 "deviceName": device_name,
                 "initializeParams": {
@@ -280,29 +279,39 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
         gce_disk_struct = [self._get_root_disk_struct(name=name,
                                                       disk_type=self._gce_image_type,
                                                       dc_idx=dc_idx)]
-        for i in range(self._gce_n_local_ssd):
-            gce_disk_struct.append(self._get_local_ssd_disk_struct(name=name, index=i, dc_idx=dc_idx))
+        gce_disk_struct.extend(
+            self._get_local_ssd_disk_struct(name=name, index=i, dc_idx=dc_idx)
+            for i in range(self._gce_n_local_ssd)
+        )
+
         if self._add_disks:
             for disk_type, disk_size in self._add_disks.items():
-                disk_size = int(disk_size)
-                if disk_size:
+                if disk_size := int(disk_size):
                     gce_disk_struct.append(self._get_persistent_disk_struct(name=name, disk_size=disk_size,
                                                                             disk_type=disk_type, dc_idx=dc_idx))
         self.log.debug(gce_disk_struct)
         return gce_disk_struct
 
     def _prepare_user_data(self):
-        if not self.params.get("use_preinstalled_scylla"):
-            return get_cloud_init_config()
-        else:
-            return json.dumps(dict(scylla_yaml=dict(cluster_name=self.name),
-                                   start_scylla_on_first_boot=False,
-                                   raid_level=self.params.get("raid_level")))
+        return (
+            json.dumps(
+                dict(
+                    scylla_yaml=dict(cluster_name=self.name),
+                    start_scylla_on_first_boot=False,
+                    raid_level=self.params.get("raid_level"),
+                )
+            )
+            if self.params.get("use_preinstalled_scylla")
+            else get_cloud_init_config()
+        )
 
     def _create_instance(self, node_index, dc_idx, spot=False):
         def set_tags_as_labels(_instance):
             self.log.debug(f"Expected tags are {self.tags}")
-            lower_tags = dict((k.lower(), v.lower().replace('.', '-')) for k, v in self.tags.items())
+            lower_tags = {
+                k.lower(): v.lower().replace('.', '-') for k, v in self.tags.items()
+            }
+
             self.log.debug(f"Lower tags are {lower_tags}")
             self._gce_services[dc_idx].ex_set_node_labels(_instance, lower_tags)
 
@@ -391,10 +400,12 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
 
     def _create_instances(self, count, dc_idx=0):
         spot = 'spot' in self.instance_provision
-        instances = []
-        for node_index in range(self._node_index + 1, self._node_index + count + 1):
-            instances.append(self._create_instance(node_index, dc_idx, spot))
-        return instances
+        return [
+            self._create_instance(node_index, dc_idx, spot)
+            for node_index in range(
+                self._node_index + 1, self._node_index + count + 1
+            )
+        ]
 
     def _destroy_instance(self, name: str, dc_idx: int) -> bool:
         target_node = self._get_instances_by_name(dc_idx=dc_idx, name=name)
@@ -447,7 +458,7 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
             node.init()
             return node
         except Exception as ex:
-            raise CreateGCENodeError('Failed to create node: %s' % ex) from ex
+            raise CreateGCENodeError(f'Failed to create node: {ex}') from ex
 
     # pylint: disable=too-many-arguments
     def add_nodes(self, count, ec2_user_data='', dc_idx=0, rack=0, enable_auto_bootstrap=False):
@@ -458,7 +469,7 @@ class GCECluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
         if self.test_config.REUSE_CLUSTER:
             instances = self._get_instances(dc_idx)
             if not instances:
-                raise RuntimeError("No nodes found for testId %s " % (self.test_config.test_id(),))
+                raise RuntimeError(f"No nodes found for testId {self.test_config.test_id()} ")
         else:
             instances = self._create_instances(count, dc_idx)
 
@@ -555,7 +566,7 @@ class MonitorSetGCE(cluster.BaseMonitorSet, GCECluster):
         node_prefix = cluster.prepend_user_prefix(user_prefix, 'monitor-node')
         cluster_prefix = cluster.prepend_user_prefix(user_prefix, 'monitor-set')
 
-        targets = targets if targets else {}
+        targets = targets or {}
         cluster.BaseMonitorSet.__init__(
             self, targets=targets, params=params, monitor_id=monitor_id,
         )

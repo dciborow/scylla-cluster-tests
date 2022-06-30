@@ -107,8 +107,8 @@ class Event:
         """
         if name_to_parse:
             if result := re.match(r"(.*\s)?(.*)(-\d+)", name_to_parse):
-                node_name = f"node{result.group(3)}"
-                cluster_name = result.group(2).replace("node", "cluster")
+                node_name = f"node{result[3]}"
+                cluster_name = result[2].replace("node", "cluster")
                 return node_name, cluster_name
         return name_to_parse, None
 
@@ -117,36 +117,35 @@ class Event:
         Creates labels for the chart
         """
         if self.event_dict["base"] in ["RepairEvent", "CompactionEvent"]:
-            label_string = f"{self.event_dict['base']}, shard: {self.event_dict['shard']}"
+            return f"{self.event_dict['base']}, shard: {self.event_dict['shard']}"
         elif self.event_dict["base"] == "DisruptionEvent":
-            label_string = f"{self.event_dict['base']}, nemesis: {self.event_dict['nemesis_name']}"
+            return f"{self.event_dict['base']}, nemesis: {self.event_dict['nemesis_name']}"
         elif self.event_dict["base"] == "PrometheusAlertManagerEvent":
-            label_string = f"node: {self.event_dict['node']}, alert: {self.event_dict['alert_name']}"
+            return f"node: {self.event_dict['node']}, alert: {self.event_dict['alert_name']}"
+
         elif self.event_dict["base"] == "CassandraStressEvent":
-            label_string = f"cmd: {self.event_dict['stress_cmd']}, node: {self.event_dict['node']}"
+            return f"cmd: {self.event_dict['stress_cmd']}, node: {self.event_dict['node']}"
         elif self.event_dict["base"] == "CassandraStressLogEvent":
-            label_string = self.event_dict['node']
+            return self.event_dict['node']
         else:
-            label_string = self.event_dict['base']
-        return label_string
+            return self.event_dict['base']
 
     def _create_chart_value(self) -> str:
         """
         Creates values for chart's tooltips
         """
         if self.event_dict["base"] == "InfoEvent":
-            label_string = f"message: {self.event_dict['message']}"
+            return f"message: {self.event_dict['message']}"
         elif self.event_dict["base"] == "NodetoolEvent":
-            label_string = f"nodetool_command: {self.event_dict['nodetool_command']}"
+            return f"nodetool_command: {self.event_dict['nodetool_command']}"
         elif self.event_dict["base"] == "DisruptionEvent":
-            label_string = f"nemesis: {self.event_dict['nemesis_name']}"
+            return f"nemesis: {self.event_dict['nemesis_name']}"
         elif self.event_dict["base"] in ["DatabaseLogEvent", "InstanceStatusEvent"]:
-            label_string = f"type: {self.event_dict['type']}"
+            return f"type: {self.event_dict['type']}"
         elif self.event_dict["base"] == "CompactionEvent":
-            label_string = f"table: {self.event_dict['table']}"
+            return f"table: {self.event_dict['table']}"
         else:
-            label_string = self.event_dict['base']
-        return label_string
+            return self.event_dict['base']
 
 
 # pylint: disable=too-many-instance-attributes
@@ -181,8 +180,9 @@ class ParallelTimelinesReportGenerator:
                         self.events_file, len(self.events))
 
     def prepare_scylla_nodes_event_data(self) -> None:
-        scylla_nodes_events = self._process_raw_data(events_to_process=EventGroup.NODES_RELATED_EVENTS.value)
-        if scylla_nodes_events:
+        if scylla_nodes_events := self._process_raw_data(
+            events_to_process=EventGroup.NODES_RELATED_EVENTS.value
+        ):
             LOGGER.info("Preparing Scylla node-related event data...")
             scylla_nodes_events_sorted = sorted(scylla_nodes_events,
                                                 key=lambda x: (int(x.node_name.split("-")[1]), x.base))
@@ -200,22 +200,25 @@ class ParallelTimelinesReportGenerator:
             LOGGER.info("Total number of node-related events processed: %s", stat_string)
 
     def prepare_prometheus_event_data(self) -> None:
-        prometheus_events_data = self._process_raw_data(events_to_process=EventGroup.PROMETHEUS_EVENTS.value)
-        if prometheus_events_data:
+        if prometheus_events_data := self._process_raw_data(
+            events_to_process=EventGroup.PROMETHEUS_EVENTS.value
+        ):
             prometheus_events_data_sorted = sorted(prometheus_events_data, key=lambda x: (x.original_node_name,
                                                                                           x.alert_name))
             self._process_chart_data(event_list=prometheus_events_data_sorted, group_name="Prometheus events")
 
     def prepare_sct_event_data(self) -> None:
-        sct_events_data = self._process_raw_data(events_to_process=EventGroup.SCT_EVENTS.value)
-        if sct_events_data:
+        if sct_events_data := self._process_raw_data(
+            events_to_process=EventGroup.SCT_EVENTS.value
+        ):
             sct_events_data_sorted = sorted(sct_events_data,
                                             key=lambda x: (x.base, x.original_node_name, x.nemesis_name))
             self._process_chart_data(event_list=sct_events_data_sorted, group_name="SCT events")
 
     def prepare_stress_event_data(self) -> None:
-        stress_events_data = self._process_raw_data(events_to_process=EventGroup.STRESS_EVENTS.value)
-        if stress_events_data:
+        if stress_events_data := self._process_raw_data(
+            events_to_process=EventGroup.STRESS_EVENTS.value
+        ):
             stress_events_data_sorted = sorted(stress_events_data, key=lambda x: (x.base, x.original_node_name,
                                                                                   x.stress_cmd))
             self._process_chart_data(event_list=stress_events_data_sorted, group_name="Stress events")
@@ -303,9 +306,7 @@ class ParallelTimelinesReportGenerator:
             else:
                 begin_event_id_set.add(event.event_id)
                 begin_events.append(event)
-        # Check if there are event IDs with period_type = "begin" and without period_type = "end"
-        endless_event_id_set = begin_event_id_set.difference(end_event_id_set)
-        if endless_event_id_set:
+        if endless_event_id_set := begin_event_id_set.difference(end_event_id_set):
             # If endless events exist, evaluate end_timestamp for them
             endless_events = list(filter(lambda x: x.event_id in endless_event_id_set, begin_events))
             for event in endless_events:
@@ -324,9 +325,7 @@ class ParallelTimelinesReportGenerator:
         report_file = self.events_file.parent / report_file_name
         LOGGER.info("Creating report file \"%s\"", report_file)
         max_line_height = 20
-        label_count = 0
-        for group in self.chart_data:
-            label_count += len(group["data"])
+        label_count = sum(len(group["data"]) for group in self.chart_data)
         max_height = max_line_height * label_count + 200
         template = env.get_template(self.template)
         rendered_template = template.render(chart_data=self.chart_data, max_height=max_height,

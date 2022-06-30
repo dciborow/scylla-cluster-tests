@@ -39,8 +39,7 @@ class NemesisElasticSearchPublisher:
 
     @cached_property
     def stats(self):
-        _stats = {}
-        _stats['versions'] = self.tester.get_scylla_versions()
+        _stats = {'versions': self.tester.get_scylla_versions()}
         _stats['test_details'] = self.tester.get_test_details()
         _stats['test_details']['test_name'] = self.tester.id()
         return _stats
@@ -89,15 +88,16 @@ class NemesisElasticSearchPublisher:
                                disrupt_name, error_message_size_mb, self.error_message_size_limit_mb)
                 # NOTE: we are satisfied making rough rounding here
                 data["error"] = data["error"][:int(len(data["error"]) / diff)]
-            new_nemesis_data.update(dict(
+            new_nemesis_data |= dict(
                 nemesis_name=disrupt_name,
                 nemesis_duration=data['duration'],
                 start_time=datetime.utcfromtimestamp(data['start']),
                 end_time=datetime.utcfromtimestamp(data['end']),
                 target_node=data['node'],
                 outcome="failure",
-                failure_message=data['error']
-            ))
+                failure_message=data['error'],
+            )
+
 
         res = self.es.index(index=self.index_name, doc_type='nemesis', body=new_nemesis_data)
         LOGGER.debug(res)

@@ -117,9 +117,7 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
                          )
 
     def __str__(self):
-        return 'Cluster %s (AMI: %s Type: %s)' % (self.name,
-                                                  self._ec2_ami_id,
-                                                  self._ec2_instance_type)
+        return f'Cluster {self.name} (AMI: {self._ec2_ami_id} Type: {self._ec2_instance_type})'
 
     def calculate_spot_duration_for_test(self):
         return floor(self.test_config.TEST_DURATION / 60) * 60 + 60
@@ -135,15 +133,14 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
                       BlockDeviceMappings=self._ec2_block_device_mappings,
                       NetworkInterfaces=interfaces,
                       InstanceType=self._ec2_instance_type)
-        instance_profile = self.params.get('aws_instance_profile_name')
-        if instance_profile:
+        if instance_profile := self.params.get('aws_instance_profile_name'):
             params['IamInstanceProfile'] = {'Name': instance_profile}
         instances = self._ec2_services[dc_idx].create_instances(**params)
 
         ec2 = ec2_client.EC2ClientWrapper(region_name=self.region_names[dc_idx])
         ec2.add_tags(instances, {'Name': 'on_demand'})
 
-        self.log.debug("Created instances: %s." % instances)
+        self.log.debug(f"Created instances: {instances}.")
         return instances
 
     def _create_spot_instances(self, count, interfaces, ec2_user_data='', dc_idx=0):  # pylint: disable=too-many-arguments
@@ -162,7 +159,7 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
                            aws_instance_profile=self.params.get('aws_instance_profile_name'))
         if self.instance_provision == INSTANCE_PROVISION_SPOT_DURATION:
             # duration value must be a multiple of 60
-            spot_params.update({'duration': self.calculate_spot_duration_for_test()})
+            spot_params['duration'] = self.calculate_spot_duration_for_test()
 
         limit = SPOT_FLEET_LIMIT if self.instance_provision == INSTANCE_PROVISION_SPOT_FLEET else SPOT_CNT_LIMIT
         request_cnt = 1
@@ -207,15 +204,16 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
 
         self.log.info(f"Create {self.instance_provision} instance(s)")
         if self.instance_provision == 'mixed':
-            instances = self._create_mixed_instances(count, interfaces, ec2_user_data, dc_idx)
+            return self._create_mixed_instances(count, interfaces, ec2_user_data, dc_idx)
         elif self.instance_provision == INSTANCE_PROVISION_ON_DEMAND:
-            instances = self._create_on_demand_instances(count, interfaces, ec2_user_data, dc_idx)
-        elif self.instance_provision == INSTANCE_PROVISION_SPOT_FLEET and count > 1:
-            instances = self._create_spot_instances(count, interfaces, ec2_user_data, dc_idx)
-        else:
-            instances = self.fallback_provision_type(count, interfaces, ec2_user_data, dc_idx)
+            return self._create_on_demand_instances(
+                count, interfaces, ec2_user_data, dc_idx
+            )
 
-        return instances
+        elif self.instance_provision == INSTANCE_PROVISION_SPOT_FLEET and count > 1:
+            return self._create_spot_instances(count, interfaces, ec2_user_data, dc_idx)
+        else:
+            return self.fallback_provision_type(count, interfaces, ec2_user_data, dc_idx)
 
     def fallback_provision_type(self, count, interfaces, ec2_user_data, dc_idx):
         # If user requested to use spot instances, first try to get spot_duration instances (according to test_duration)
@@ -277,8 +275,8 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
 
     def _create_mixed_instances(self, count, interfaces, ec2_user_data, dc_idx):  # pylint: disable=too-many-arguments
         instances = []
-        max_num_on_demand = 2
         if isinstance(self, (ScyllaAWSCluster, CassandraAWSCluster)):
+            max_num_on_demand = 2
             if count > 2:
                 count_on_demand = max_num_on_demand
             elif count == 2:
@@ -309,7 +307,7 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
             self.instance_provision = INSTANCE_PROVISION_ON_DEMAND
             instances.extend(self._create_on_demand_instances(count, interfaces, ec2_user_data, dc_idx))
         else:
-            raise Exception('Unsuported type of cluster type %s' % self)
+            raise Exception(f'Unsuported type of cluster type {self}')
         return instances
 
     def _get_instances(self, dc_idx):
@@ -325,10 +323,10 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
         instances = results[self.region_names[dc_idx]]
 
         def sort_by_index(item):
-            for tag in item['Tags']:
-                if tag['Key'] == 'NodeIndex':
-                    return tag['Value']
-            return '0'
+            return next(
+                (tag['Value'] for tag in item['Tags'] if tag['Key'] == 'NodeIndex'),
+                '0',
+            )
         instances = sorted(instances, key=sort_by_index)
         return [ec2.get_instance(instance['InstanceId']) for instance in instances]
 
@@ -346,11 +344,10 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
                 ec2_user_data.replace('--bootstrap false', '--bootstrap true')
             else:
                 ec2_user_data += ' --bootstrap true '
+        elif '--bootstrap ' in ec2_user_data:
+            ec2_user_data.replace('--bootstrap true', '--bootstrap false')
         else:
-            if '--bootstrap ' in ec2_user_data:
-                ec2_user_data.replace('--bootstrap true', '--bootstrap false')
-            else:
-                ec2_user_data += ' --bootstrap false '
+            ec2_user_data += ' --bootstrap false '
         return ec2_user_data
 
     def _create_or_find_instances(self, count, ec2_user_data, dc_idx):
@@ -380,12 +377,11 @@ class AWSCluster(cluster.BaseCluster):  # pylint: disable=too-many-instance-attr
             ec2_user_data['post_configuration_script'] = base64.b64encode(
                 post_boot_script.encode('utf-8')).decode('ascii')
             ec2_user_data = json.dumps(ec2_user_data)
+        elif 'clustername' in ec2_user_data:
+            ec2_user_data += " --base64postscript={0}".format(
+                base64.b64encode(post_boot_script.encode('utf-8')).decode('ascii'))
         else:
-            if 'clustername' in ec2_user_data:
-                ec2_user_data += " --base64postscript={0}".format(
-                    base64.b64encode(post_boot_script.encode('utf-8')).decode('ascii'))
-            else:
-                ec2_user_data = post_boot_script
+            ec2_user_data = post_boot_script
 
         #  replace user_data json with cloud-init content if preinstalled scylla is not used
         if not self.params.get("use_preinstalled_scylla"):
@@ -547,9 +543,7 @@ class AWSNode(cluster.BaseNode):
         return self._instance.public_ip_address
 
     def _get_private_ip_address(self) -> Optional[str]:
-        if self._eth1_private_ip_address:
-            return self._eth1_private_ip_address
-        return self._instance.private_ip_address
+        return self._eth1_private_ip_address or self._instance.private_ip_address
 
     def _get_ipv6_ip_address(self) -> Optional[str]:
         return self._instance.network_interfaces[0].ipv6_addresses[0]["Ipv6Address"]
@@ -611,7 +605,9 @@ class AWSNode(cluster.BaseNode):
                 f"sudo sh -c  \"echo 'sudo ip route add {ipv6_cidr} dev eth0' >> /etc/sysconfig/network-scripts/init.ipv6-global\"")
 
             res = self.remoter.run(f"grep '{ipv6_cidr}' /etc/sysconfig/network-scripts/init.ipv6-global")
-            LOGGER.debug('init.ipv6-global was {}updated'.format('' if res.stdout.strip else 'NOT '))
+            LOGGER.debug(
+                f"init.ipv6-global was {'' if res.stdout.strip else 'NOT '}updated"
+            )
 
     def restart(self):
         # We differentiate between "Restart" and "Reboot".
@@ -745,7 +741,10 @@ class AWSNode(cluster.BaseNode):
             tc_command = LOCAL_CMD_RUNNER.run("tcdel eth1 --tc-command", ignore_status=True).stdout
             self.remoter.run('sudo bash -cxe "%s"' % tc_command, ignore_status=True)
         else:
-            tc_command = LOCAL_CMD_RUNNER.run("tcset eth1 {} --tc-command".format(tcconfig_params)).stdout
+            tc_command = LOCAL_CMD_RUNNER.run(
+                f"tcset eth1 {tcconfig_params} --tc-command"
+            ).stdout
+
             self.remoter.run('sudo bash -cxe "%s"' % tc_command)
 
     def install_traffic_control(self):
@@ -782,7 +781,7 @@ class ScyllaAWSCluster(cluster.BaseScyllaCluster, AWSCluster):
         node_prefix = cluster.prepend_user_prefix(user_prefix, 'db-node')
 
         shortid = str(cluster_uuid)[:8]
-        name = '%s-%s' % (cluster_prefix, shortid)
+        name = f'{cluster_prefix}-{shortid}'
 
         ami_tags = get_ami_tags(ec2_ami_id[0], region_name=params.get('region_name').split()[0])
         # TODO: remove once all other related code is merged in scylla-pkg and scylla-machine-image
@@ -825,12 +824,16 @@ class ScyllaAWSCluster(cluster.BaseScyllaCluster, AWSCluster):
     def add_nodes(self, count, ec2_user_data='', dc_idx=0, rack=0, enable_auto_bootstrap=False):
         if not ec2_user_data:
             if self._ec2_user_data and isinstance(self._ec2_user_data, str):
-                ec2_user_data = re.sub(r'(--totalnodes\s)(\d*)(\s)',
-                                       r'\g<1>{}\g<3>'.format(len(self.nodes) + count), self._ec2_user_data)
+                ec2_user_data = re.sub(
+                    r'(--totalnodes\s)(\d*)(\s)',
+                    f'\g<1>{len(self.nodes) + count}\g<3>',
+                    self._ec2_user_data,
+                )
+
             elif self._ec2_user_data and isinstance(self._ec2_user_data, dict):
                 ec2_user_data = self._ec2_user_data
             else:
-                ec2_user_data = ('--clustername %s --totalnodes %s ' % (self.name, count))
+                ec2_user_data = f'--clustername {self.name} --totalnodes {count} '
         if self.nodes and isinstance(ec2_user_data, str):
             node_ips = [node.ip_address for node in self.nodes if node.is_seed]
             seeds = ",".join(node_ips)
@@ -838,17 +841,16 @@ class ScyllaAWSCluster(cluster.BaseScyllaCluster, AWSCluster):
             if not seeds:
                 seeds = self.nodes[0].ip_address
 
-            ec2_user_data += ' --seeds %s ' % seeds
+            ec2_user_data += f' --seeds {seeds} '
 
         ec2_user_data = self.update_bootstrap(ec2_user_data, enable_auto_bootstrap)
-        added_nodes = super().add_nodes(
+        return super().add_nodes(
             count=count,
             ec2_user_data=ec2_user_data,
             dc_idx=dc_idx,
             rack=rack,
             enable_auto_bootstrap=enable_auto_bootstrap,
         )
-        return added_nodes
 
     @staticmethod
     def _wait_for_preinstalled_scylla(node):
@@ -889,7 +891,7 @@ class CassandraAWSCluster(ScyllaAWSCluster):
         node_prefix = cluster.prepend_user_prefix(user_prefix, 'cs-db-node')
         node_type = 'cs-db'
         shortid = str(cluster_uuid)[:8]
-        name = '%s-%s' % (cluster_prefix, shortid)
+        name = f'{cluster_prefix}-{shortid}'
         user_data = ('--clustername %s '
                      '--totalnodes %s --version community '
                      '--release 2.1.15' % (name, sum(n_nodes)))
@@ -925,22 +927,18 @@ class CassandraAWSCluster(ScyllaAWSCluster):
 
     # pylint: disable=too-many-arguments
     def add_nodes(self, count, ec2_user_data='', dc_idx=0, rack=0, enable_auto_bootstrap=False):
-        if not ec2_user_data:
-            if self.nodes:
-                seeds = ",".join(self.get_seed_nodes())
-                ec2_user_data = ('--clustername %s '
-                                 '--totalnodes %s --seeds %s '
-                                 '--version community '
-                                 '--release 2.1.15' % (self.name,
-                                                       count,
-                                                       seeds))
+        if not ec2_user_data and self.nodes:
+            seeds = ",".join(self.get_seed_nodes())
+            ec2_user_data = ('--clustername %s '
+                             '--totalnodes %s --seeds %s '
+                             '--version community '
+                             '--release 2.1.15' % (self.name,
+                                                   count,
+                                                   seeds))
         ec2_user_data = self.update_bootstrap(ec2_user_data, enable_auto_bootstrap)
-        added_nodes = super().add_nodes(
-            count=count,
-            ec2_user_data=ec2_user_data,
-            dc_idx=dc_idx,
-            rack=0)
-        return added_nodes
+        return super().add_nodes(
+            count=count, ec2_user_data=ec2_user_data, dc_idx=dc_idx, rack=0
+        )
 
     def node_setup(self, node, verbose=False, timeout=3600):
         node.wait_ssh_up(verbose=verbose)
@@ -972,8 +970,8 @@ class LoaderSetAWS(cluster.BaseLoaderSet, AWSCluster):
         node_prefix = cluster.prepend_user_prefix(user_prefix, 'loader-node')
         node_type = 'loader'
         cluster_prefix = cluster.prepend_user_prefix(user_prefix, 'loader-set')
-        user_data = ('--clustername %s --totalnodes %s --bootstrap false --stop-services' %
-                     (cluster_prefix, n_nodes))
+        user_data = f'--clustername {cluster_prefix} --totalnodes {n_nodes} --bootstrap false --stop-services'
+
         cluster.BaseLoaderSet.__init__(self,
                                        params=params)
 

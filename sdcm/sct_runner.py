@@ -292,8 +292,11 @@ class SctRunner(ABC):
         WARNING: this can't run in parallel!
         """
         LOGGER.info("Looking for source SCT Runner Image in `%s'...", self.SOURCE_IMAGE_REGION)
-        source_image = self.source_image
-        if not source_image:
+        if source_image := self.source_image:
+            LOGGER.info("SCT Runner image exists in the source region `%s'! ID: %s",
+                        self.SOURCE_IMAGE_REGION, self._get_image_id(image=source_image))
+
+        else:
             LOGGER.info("Source SCT Runner Image not found. Creating...")
             instance = self._create_instance(
                 instance_type=self.IMAGE_BUILDER_INSTANCE_TYPE,
@@ -324,10 +327,6 @@ class SctRunner(ABC):
             except Exception as ex:  # pylint: disable=broad-except
                 LOGGER.warning("Was not able to terminate `%s': %s\nPlease terminate manually!!!",
                                builder_instance_id, ex)
-        else:
-            LOGGER.info("SCT Runner image exists in the source region `%s'! ID: %s",
-                        self.SOURCE_IMAGE_REGION, self._get_image_id(image=source_image))
-
         if self.region_name != self.SOURCE_IMAGE_REGION and self.image is None:
             LOGGER.info("Copying %s to %s...\nNOTE: it can take 5-15 minutes.",
                         self.image_name, self.region_name)
@@ -359,7 +358,7 @@ class SctRunner(ABC):
             "keep_action": "terminate",
         }
         if restore_monitor and restored_test_id:
-            tags.update({"RestoredTestId": restored_test_id})
+            tags["RestoredTestId"] = restored_test_id
 
         return self._create_instance(
             instance_type=instance_type or self.instance_type(test_duration=test_duration),

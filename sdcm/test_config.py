@@ -141,11 +141,11 @@ class TestConfig(metaclass=Singleton):  # pylint: disable=too-many-public-method
     @classmethod
     def keep_cluster(cls, node_type, val='destroy'):
         if "db_nodes" in node_type:
-            cls.KEEP_ALIVE_DB_NODES = bool(val == 'keep')
+            cls.KEEP_ALIVE_DB_NODES = val == 'keep'
         elif "loader_nodes" in node_type:
-            cls.KEEP_ALIVE_LOADER_NODES = bool(val == 'keep')
+            cls.KEEP_ALIVE_LOADER_NODES = val == 'keep'
         elif "monitor_nodes" in node_type:
-            cls.KEEP_ALIVE_MONITOR_NODES = bool(val == 'keep')
+            cls.KEEP_ALIVE_MONITOR_NODES = val == 'keep'
 
     @classmethod
     def should_keep_alive(cls, node_type: Optional[str]) -> bool:
@@ -173,8 +173,7 @@ class TestConfig(metaclass=Singleton):  # pylint: disable=too-many-public-method
                     TestId=str(cls.test_id()),
                     version=job_name.split('/', 1)[0] if job_name else "unknown")
 
-        build_tag = os.environ.get('BUILD_TAG')
-        if build_tag:
+        if build_tag := os.environ.get('BUILD_TAG'):
             tags["JenkinsJobTag"] = build_tag
 
         return tags
@@ -234,7 +233,7 @@ class TestConfig(metaclass=Singleton):  # pylint: disable=too-many-public-method
                 "bind_tls": False
             }
             res = requests.post('http://localhost:4040/api/tunnels', json=tunnel)
-            assert res.ok, "failed to add a ngrok tunnel [{}, {}]".format(res, res.text)
+            assert res.ok, f"failed to add a ngrok tunnel [{res}, {res.text}]"
             ngrok_address = res.json()['public_url'].replace('tcp://', '')
 
             address, port = ngrok_address.split(':')
