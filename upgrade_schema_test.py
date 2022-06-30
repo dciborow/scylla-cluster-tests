@@ -260,9 +260,7 @@ class UpgradeSchemaTest(ClusterTester):
 
         global thrift_client
         global cql_client
-        ips = []
-        for node in self.db_cluster.nodes:
-            ips.append(node.public_ip_address)
+        ips = [node.public_ip_address for node in self.db_cluster.nodes]
         cluster = Cluster(contact_points=ips, executor_threads=1, max_schema_agreement_wait=30)
         cql_client = cluster.connect()
 
@@ -295,7 +293,7 @@ class UpgradeSchemaTest(ClusterTester):
 
         l = len(self.db_cluster.nodes)
         # prepare an array containing the indexes
-        indexes = [x for x in range(l)]
+        indexes = list(range(l))
         # shuffle it so we will upgrade the nodes in a
         # random order
         random.shuffle(indexes)

@@ -70,7 +70,7 @@ class ManagerUpgradeTest(BackupFunctionsMixIn, ClusterTester):
             node_ip = scylla_manager_yaml["http"].split(":", maxsplit=1)[0]
             scylla_manager_yaml["http"] = f"{node_ip}:{new_manager_http_port}"
             scylla_manager_yaml["prometheus"] = f"{node_ip}:{self.params['manager_prometheus_port']}"
-            LOGGER.info("The new Scylla Manager is:\n{}".format(scylla_manager_yaml))
+            LOGGER.info(f"The new Scylla Manager is:\n{scylla_manager_yaml}")
         manager_node.restart_manager_server(port=new_manager_http_port)
         manager_tool = get_scylla_manager_tool(manager_node=manager_node)
         manager_tool.add_cluster(name="cluster_under_test", db_cluster=self.db_cluster,
@@ -209,12 +209,13 @@ def wait_until_task_finishes_return_details(task, wait=True, timeout=1000, step=
         end_time_string = task.sctool.get_table_value(parsed_table=task_history, column_name="end time",
                                                       identifier=latest_run_id)
         end_time = time_string_to_datetime(end_time_string)
-    task_details = {"next run": next_run_time,
-                    "latest run id": latest_run_id,
-                    "start time": start_time,
-                    "end time": end_time,
-                    "duration": duration}
-    return task_details
+    return {
+        "next run": next_run_time,
+        "latest run id": latest_run_id,
+        "start time": start_time,
+        "end time": end_time,
+        "duration": duration,
+    }
 
 
 def time_diff_string_to_datetime(time_diff_string, base_time_string=None):
@@ -243,18 +244,17 @@ def time_diff_string_to_datetime(time_diff_string, base_time_string=None):
 def time_string_to_datetime(time_string):
     if " (" in time_string:
         time_string = time_string[:time_string.find(" (")]
-    datetime_object = datetime.strptime(time_string, "%d %b %y %H:%M:%S %Z")
-    return datetime_object
+    return datetime.strptime(time_string, "%d %b %y %H:%M:%S %Z")
 
 
 def _create_mismatched_details_error_message(previous_task_details, current_task_details, mismatched_details_name_list):
     error_message_format = "\n{}: from {} to {}"
-    complete_error_description = ""
-    for name in mismatched_details_name_list:
-        complete_error_description += error_message_format.format(name,
-                                                                  previous_task_details[name],
-                                                                  current_task_details[name])
-    return complete_error_description
+    return "".join(
+        error_message_format.format(
+            name, previous_task_details[name], current_task_details[name]
+        )
+        for name in mismatched_details_name_list
+    )
 
 
 def validate_previous_task_details(task, previous_task_details):
@@ -270,9 +270,8 @@ def validate_previous_task_details(task, previous_task_details):
             # and as a result it could be a BIT imprecise
             if abs(delta.total_seconds()) > 60:
                 mismatched_details_name_list.append(detail_name)
-        else:
-            if current_value != previous_task_details[detail_name]:
-                mismatched_details_name_list.append(detail_name)
+        elif current_value != previous_task_details[detail_name]:
+            mismatched_details_name_list.append(detail_name)
     complete_error_description = _create_mismatched_details_error_message(previous_task_details,
                                                                           current_task_details,
                                                                           mismatched_details_name_list)

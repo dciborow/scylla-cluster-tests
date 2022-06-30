@@ -51,7 +51,7 @@ class YcsbStatsPublisher(FileFollowerThread):
 
     @staticmethod
     def gauge_name(operation):
-        return 'collectd_ycsb_%s_gauge' % operation.replace('-', '_')
+        return f"collectd_ycsb_{operation.replace('-', '_')}_gauge"
 
     def set_metric(self, operation, name, value):
         metric = self.METRICS[self.gauge_name(operation)]
@@ -74,15 +74,16 @@ class YcsbStatsPublisher(FileFollowerThread):
         # [CLEANUP: Count=5, Max=3, Min=0, Avg=0.6, 90=3, 99=3, 99.9=3, 99.99=3]
         # [UPDATE: Count=490, Max=190975, Min=2004, Avg=3866.96, 90=4395, 99=6755, 99.9=190975, 99.99=190975]
 
-        regex_dict = {}
-        for operation in self.collectible_ops:
-            regex_dict[operation] = re.compile(
+        regex_dict = {
+            operation: re.compile(
                 fr'\[{operation.upper()}:\sCount=(?P<count>\d*?),'
                 fr'.*?Max=(?P<max>\d*?),.*?Min=(?P<min>\d*?),'
                 fr'.*?Avg=(?P<avg>.*?),.*?90=(?P<p90>\d*?),'
                 fr'.*?99=(?P<p99>\d*?),.*?99.9=(?P<p999>\d*?),'
                 fr'.*?99.99=(?P<p9999>\d*?)[\],\s]'
             )
+            for operation in self.collectible_ops
+        }
 
         while not self.stopped():
             exists = os.path.isfile(self.ycsb_log_filename)
@@ -90,18 +91,17 @@ class YcsbStatsPublisher(FileFollowerThread):
                 time.sleep(0.5)
                 continue
 
-            for _, line in enumerate(self.follow_file(self.ycsb_log_filename)):
+            for line in self.follow_file(self.ycsb_log_filename):
                 if self.stopped():
                     break
                 try:
                     for operation, regex in regex_dict.items():
-                        match = regex.search(line)
-                        if match:
+                        if match := regex.search(line):
                             if operation == 'verify':
                                 self.handle_verify_metric(line)
 
                             for key, value in match.groupdict().items():
-                                if not key == 'count':
+                                if key != 'count':
                                     try:
                                         value = float(value) / 1000.0
                                     except ValueError:
@@ -117,11 +117,10 @@ class YcsbStressThread(DockerBasedStressThread):  # pylint: disable=too-many-ins
     def copy_template(self, docker):
         if self.params.get('alternator_use_dns_routing'):
             target_address = 'alternator'
+        elif hasattr(self.node_list[0], 'parent_cluster'):
+            target_address = self.node_list[0].parent_cluster.get_node().cql_ip_address
         else:
-            if hasattr(self.node_list[0], 'parent_cluster'):
-                target_address = self.node_list[0].parent_cluster.get_node().cql_ip_address
-            else:
-                target_address = self.node_list[0].cql_ip_address
+            target_address = self.node_list[0].cql_ip_address
 
         if 'dynamodb' in self.stress_cmd:
             dynamodb_teample = dedent('''
@@ -200,15 +199,12 @@ class YcsbStressThread(DockerBasedStressThread):  # pylint: disable=too-many-ins
                   'op rate': 0
                   }
         for line in result.stdout.splitlines():
-            match = ops_regex.match(line)
-            if match:
+            if match := ops_regex.match(line):
                 output['op rate'] = match.groupdict()['op_rate']
-            match = latency_99_regex.match(line)
-            if match:
+            if match := latency_99_regex.match(line):
                 output['latency 99th percentile'] += float(match.groups()[1]) / 1000.0
                 output['latency 99th percentile'] /= 2
-            match = latency_mean_regex.match(line)
-            if match:
+            if match := latency_mean_regex.match(line):
                 output['latency mean'] += float(match.groups()[1]) / 1000.0
                 output['latency mean'] /= 2
 

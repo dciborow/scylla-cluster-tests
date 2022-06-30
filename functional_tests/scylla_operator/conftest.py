@@ -49,7 +49,7 @@ def pytest_runtest_makereport(item, call):  # pylint: disable=unused-argument
         TESTER.update_test_status(item.nodeid, *item._test_result)  # pylint: disable=protected-access
     elif rep.passed:
         item._test_result = ('SUCCESS', None)  # pylint: disable=protected-access
-    elif not rep.passed:
+    else:
         item._test_result = ('FAILED', str(rep.longrepr))  # pylint: disable=protected-access
 
 

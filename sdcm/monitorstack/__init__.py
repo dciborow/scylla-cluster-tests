@@ -54,7 +54,10 @@ def restore_monitoring_stack(test_id, date_time=None):  # pylint: disable=too-ma
 
     LOGGER.info('Restoring monitoring stack from archive %s', arch['file_path'])
     monitoring_stack_base_dir = tempfile.mkdtemp()
-    LOGGER.info('Download file {} to directory {}'.format(arch['link'], monitoring_stack_base_dir))
+    LOGGER.info(
+        f"Download file {arch['link']} to directory {monitoring_stack_base_dir}"
+    )
+
     downloaded_monitoring_archive = S3Storage().download_file(arch['link'],
                                                               dst_dir=monitoring_stack_base_dir)
     monitoring_data_arch = extract_monitoring_data_archive(downloaded_monitoring_archive,
@@ -125,12 +128,15 @@ def get_monitoring_stack_archive(test_id, date_time):
         return False
 
     if date_time:
-        found_archives = [archive for archive in monitoring_stack_archives
-                          if archive['date'] == datetime.datetime.strptime(date_time, "%Y%m%d_%H%M%S")]
-        if not found_archives:
-            LOGGER.warning('Monitoring stack archive for date %s was not found', date_time)
-        else:
+        if found_archives := [
+            archive
+            for archive in monitoring_stack_archives
+            if archive['date']
+            == datetime.datetime.strptime(date_time, "%Y%m%d_%H%M%S")
+        ]:
             arch = found_archives[-1]
+        else:
+            LOGGER.warning('Monitoring stack archive for date %s was not found', date_time)
     else:
         arch = monitoring_stack_archives[-1]
 
@@ -264,8 +270,13 @@ def get_monitoring_stack_scylla_version(monitoring_stack_dir):
 def restore_grafana_dashboards_and_annotations(monitoring_dockers_dir):
     status = []
     try:
-        status.append(restore_sct_dashboards(monitoring_dockers_dir))
-        status.append(restore_annotations_data(monitoring_dockers_dir))
+        status.extend(
+            (
+                restore_sct_dashboards(monitoring_dockers_dir),
+                restore_annotations_data(monitoring_dockers_dir),
+            )
+        )
+
     except Exception as details:  # pylint: disable=broad-except
         LOGGER.error("Error during uploading sct monitoring data %s", details)
         status.append(False)
@@ -312,9 +323,10 @@ def restore_sct_dashboards(monitoring_dockers_dir):
 
         if res.status_code != 200:
             LOGGER.info('Error uploading dashboard %s. Error message %s', sct_dashboard_file, res.text)
-            raise ErrorUploadSCTDashboard('Error uploading dashboard {}. Error message {}'.format(
-                sct_dashboard_file,
-                res.text))
+            raise ErrorUploadSCTDashboard(
+                f'Error uploading dashboard {sct_dashboard_file}. Error message {res.text}'
+            )
+
         LOGGER.info('Dashboard %s loaded successfully', sct_dashboard_file)
         return True
     except Exception as details:  # pylint: disable=broad-except
@@ -340,8 +352,10 @@ def restore_annotations_data(monitoring_stack_dir):
             res = requests.post(annotations_url, data=json.dumps(an), headers={'Content-Type': 'application/json'})
             if res.status_code != 200:
                 LOGGER.info('Error during uploading annotation %s. Error message %s', an, res.text)
-                raise ErrorUploadAnnotations('Error during uploading annotation {}. Error message {}'.format(an,
-                                                                                                             res.text))
+                raise ErrorUploadAnnotations(
+                    f'Error during uploading annotation {an}. Error message {res.text}'
+                )
+
         LOGGER.info('Annotations loaded successfully')
         return True
     except Exception as details:  # pylint: disable=broad-except
@@ -399,8 +413,7 @@ def is_docker_available():
 
 
 def verify_monitoring_stack():
-    checked_statuses = []
-    checked_statuses.append(verify_dockers_are_running())
+    checked_statuses = [verify_dockers_are_running()]
     checked_statuses.append(verify_grafana_is_available())
     checked_statuses.append(verify_prometheus_is_available())
     return all(checked_statuses)
@@ -409,11 +422,15 @@ def verify_monitoring_stack():
 def verify_dockers_are_running():
     result = LocalCmdRunner().run("docker ps --format '{{.Names}}'", ignore_status=True)  # pylint: disable=invalid-name
     docker_names = result.stdout.strip().split()
-    if result.ok and docker_names:
-        if f"{GRAFANA_DOCKER_NAME}-{GRAFANA_DOCKER_PORT}" in docker_names \
-                and f"{PROMETHEUS_DOCKER_NAME}-{PROMETHEUS_DOCKER_PORT}" in docker_names:
-            LOGGER.info("Monitoring stack docker containers are running.\n%s", result.stdout)
-            return True
+    if (
+        result.ok
+        and docker_names
+        and f"{GRAFANA_DOCKER_NAME}-{GRAFANA_DOCKER_PORT}" in docker_names
+        and f"{PROMETHEUS_DOCKER_NAME}-{PROMETHEUS_DOCKER_PORT}"
+        in docker_names
+    ):
+        LOGGER.info("Monitoring stack docker containers are running.\n%s", result.stdout)
+        return True
     LOGGER.error("Monitoring stack containers are not running\nStdout:\n%s\nstderr:%s", result.stdout, result.stderr)
     return False
 
@@ -429,7 +446,7 @@ def verify_grafana_is_available():
                                                             port=GRAFANA_DOCKER_PORT,
                                                             title=dashboard.title)
             grafana_statuses.append(result)
-            LOGGER.info("Dashboard {} is available".format(dashboard.title))
+            LOGGER.info(f"Dashboard {dashboard.title} is available")
         except Exception as details:  # pylint: disable=broad-except
             LOGGER.error("Dashboard %s is not available. Error: %s", dashboard.title, details)
             grafana_statuses.append(False)

@@ -204,7 +204,7 @@ class FullPartitionScanThread(ScanOperationThread):
                                error)
         raise Exception('Failed getting table clustering order from all db nodes')
 
-    def randomly_form_cql_statement(self) -> Optional[tuple[str, str]]:  # pylint: disable=too-many-branches
+    def randomly_form_cql_statement(self) -> Optional[tuple[str, str]]:    # pylint: disable=too-many-branches
         """
         The purpose of this method is to form a random reversed-query out of all options, like:
             select * from scylla_bench.test where pk = 1234 and ck < 4721 and ck > 2549 order by ck desc
@@ -234,42 +234,13 @@ class FullPartitionScanThread(ScanOperationThread):
                     f' where {pk_name} = {partition_key}'
                 query_suffix = self.limit = ''
 
-                # Randomly add CK filtering ( less-than / greater-than / both / non-filter )
-
-                # example: rows-count = 20, ck > 10, ck < 15, limit = 3 ==> ck_range = [11..14] = 4
-                # ==> limit < ck_range
-                # reversed query is: select * from scylla_bench.test where pk = 1 and ck > 10
-                # order by ck desc limit 5
-                # normal query should be: select * from scylla_bench.test where pk = 1 and ck > 15 limit 5
-                match ck_filter:
-                    case 'lt_and_gt':
-                        # Example: select * from scylla_bench.test where pk = 1 and ck > 10 and ck < 15 order by ck desc
-                        reversed_query += self.reversed_query_filter_ck_by[ck_filter].format(ck_name,
-                                                                                             ck_random_max_value,
-                                                                                             ck_name,
-                                                                                             ck_random_min_value)
-
-                    case 'gt':
-                        # example: rows-count = 20, ck > 10, limit = 5 ==> ck_range = 20 - 10 = 10 ==> limit < ck_range
-                        # reversed query is: select * from scylla_bench.test where pk = 1 and ck > 10
-                        # order by ck desc limit 5
-                        # normal query should be: select * from scylla_bench.test where pk = 1 and ck > 15 limit 5
-                        reversed_query += self.reversed_query_filter_ck_by[ck_filter].format(ck_name,
-                                                                                             ck_random_min_value)
-
-                    case 'lt':
-                        # example: rows-count = 20, ck < 10, limit = 5 ==> limit < ck_random_min_value (ck_range)
-                        # reversed query is: select * from scylla_bench.test where pk = 1 and ck < 10
-                        # order by ck desc limit 5
-                        # normal query should be: select * from scylla_bench.test where pk = 1 and ck >= 5 limit 5
-                        reversed_query += self.reversed_query_filter_ck_by[ck_filter].format(ck_name,
-                                                                                             ck_random_min_value)
+                partition_key = random.choice(pks)
                 query_suffix = self.randomly_bypass_cache(cmd=query_suffix)
                 normal_query = reversed_query + query_suffix
                 if random.choice([False] + [True]):  # Randomly add a LIMIT
                     self.limit = random.randint(a=1, b=rows_count)
-                    query_suffix = f' limit {self.limit}' + query_suffix
-                reversed_query += f' order by {ck_name} {self.reversed_order}' + query_suffix
+                    query_suffix = f' limit {self.limit}{query_suffix}'
+                reversed_query += f' order by {ck_name} {self.reversed_order}{query_suffix}'
                 self.log.debug('Randomly formed normal query is: %s', normal_query)
                 self.log.debug('[scan: %s, type: %s] Randomly formed reversed query is: %s', self.scans_counter,
                                ck_filter, reversed_query)
@@ -322,9 +293,7 @@ class FullPartitionScanThread(ScanOperationThread):
         self.log.info("Comparing scan queries output files by: %s", diff_cmd)
         result = LOCAL_CMD_RUNNER.run(cmd=diff_cmd, ignore_status=True)
         if not result.stderr:
-            if not result.stdout:
-                self.log.info("Compared output of normal and reversed queries is identical!")
-            else:
+            if result.stdout:
                 self.log.warning("Normal and reversed queries output differs: \n%s", result.stdout.strip())
                 ls_cmd = f"ls -alh {file_names}"
                 head_cmd = f"head {file_names}"
@@ -333,6 +302,8 @@ class FullPartitionScanThread(ScanOperationThread):
                     if result.stdout:
                         stdout = result.stdout.strip()
                         self.log.info("%s command output is: \n%s", cmd, stdout)
+            else:
+                self.log.info("Compared output of normal and reversed queries is identical!")
         self.reset_output_files()
 
     def run_scan_operation(self, cmd: str = None, update_stats: bool = True):  # pylint: disable=too-many-locals
@@ -373,8 +344,10 @@ class PagedResultHandler:
             errback=self.handle_error)
 
     def _row_to_string(self, row, include_data_column: bool = False) -> str:
-        row_string = str(getattr(row, self.scan_operation_thread.pk_name))
-        row_string += str(getattr(row, self.scan_operation_thread.ck_name))
+        row_string = str(getattr(row, self.scan_operation_thread.pk_name)) + str(
+            getattr(row, self.scan_operation_thread.ck_name)
+        )
+
         if include_data_column:
             row_string += str(getattr(row, self.scan_operation_thread.data_column_name))
         return f'{row_string}\n'

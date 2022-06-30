@@ -161,7 +161,7 @@ class CloudK8sNodePool(metaclass=abc.ABCMeta):  # pylint: disable=too-many-insta
             is_deployed: bool = False):
         self.k8s_cluster = k8s_cluster
         self.name = name
-        self.num_nodes = int(num_nodes)
+        self.num_nodes = num_nodes
         self.instance_type = instance_type
         self.disk_size = disk_size
         self.disk_type = disk_type
@@ -571,18 +571,19 @@ class KubernetesCluster(metaclass=abc.ABCMeta):  # pylint: disable=too-many-publ
                 }],
             })
 
-            mgmt_docker_image_tag = self.params.get('mgmt_docker_image').split(':')[-1]
-            if mgmt_docker_image_tag:
+            if mgmt_docker_image_tag := self.params.get('mgmt_docker_image').split(
+                ':'
+            )[-1]:
                 values.set('image.tag', mgmt_docker_image_tag)
 
-            scylla_operator_repo_base = self.params.get(
-                'k8s_scylla_operator_docker_image').split('/')[0]
-            if scylla_operator_repo_base:
+            if scylla_operator_repo_base := self.params.get(
+                'k8s_scylla_operator_docker_image'
+            ).split('/')[0]:
                 values.set('controllerImage.repository', scylla_operator_repo_base)
 
-            scylla_operator_image_tag = self.params.get(
-                'k8s_scylla_operator_docker_image').split(':')[-1]
-            if scylla_operator_image_tag:
+            if scylla_operator_image_tag := self.params.get(
+                'k8s_scylla_operator_docker_image'
+            ).split(':')[-1]:
                 values.set('controllerImage.tag', scylla_operator_image_tag)
 
             self.kubectl(f'create namespace {SCYLLA_MANAGER_NAMESPACE}')
@@ -652,19 +653,14 @@ class KubernetesCluster(metaclass=abc.ABCMeta):  # pylint: disable=too-many-publ
                 # NOTE: following is supported starting with operator-1.4
                 values.set("logLevel", 4)
 
-            # Calculate options values which must be set
-            #
-            # image.repository -> self.params.get('k8s_scylla_operator_docker_image').split('/')[0]
-            # image.tag        -> self.params.get('k8s_scylla_operator_docker_image').split(':')[-1]
-
-            scylla_operator_repo_base = self.params.get(
-                'k8s_scylla_operator_docker_image').split('/')[0]
-            if scylla_operator_repo_base:
+            if scylla_operator_repo_base := self.params.get(
+                'k8s_scylla_operator_docker_image'
+            ).split('/')[0]:
                 values.set('image.repository', scylla_operator_repo_base)
 
-            scylla_operator_image_tag = self.params.get(
-                'k8s_scylla_operator_docker_image').split(':')[-1]
-            if scylla_operator_image_tag:
+            if scylla_operator_image_tag := self.params.get(
+                'k8s_scylla_operator_docker_image'
+            ).split(':')[-1]:
                 values.set('image.tag', scylla_operator_image_tag)
 
             # Install and wait for initialization of the Scylla Operator chart
@@ -700,7 +696,7 @@ class KubernetesCluster(metaclass=abc.ABCMeta):  # pylint: disable=too-many-publ
         self.helm('repo update')
 
         # Calculate new chart name if it is not specific
-        if new_chart_version in ("", "latest"):
+        if new_chart_version in {"", "latest"}:
             new_chart_version = self.get_latest_chart_version(f"{local_repo_name}/scylla-operator")
             LOGGER.info(
                 "Using automatically found following latest scylla-operator "
@@ -1385,11 +1381,17 @@ class KubernetesCluster(metaclass=abc.ABCMeta):  # pylint: disable=too-many-publ
         self.k8s_core_v1_api.create_namespaced_secret(namespace=namespace, body=secret)
 
     def update_secret_from_data(self, secret_name: str, namespace: str, data: dict, secret_type: str = 'Opaque'):
-        existing = None
-        for secret in self.k8s_core_v1_api.list_namespaced_secret(namespace).items:
-            if secret.metadata.name == secret_name:
-                existing = secret
-                break
+        existing = next(
+            (
+                secret
+                for secret in self.k8s_core_v1_api.list_namespaced_secret(
+                    namespace
+                ).items
+                if secret.metadata.name == secret_name
+            ),
+            None,
+        )
+
         if not existing:
             self.create_secret_from_data(
                 secret_name=secret_name, namespace=namespace, data=data, secret_type=secret_type)
@@ -1626,9 +1628,7 @@ class BasePodContainer(cluster.BaseNode):  # pylint: disable=too-many-public-met
 
     @property
     def _pod_status(self):
-        if pod := self._pod:
-            return pod.status
-        return None
+        return pod.status if (pod := self._pod) else None
 
     @property
     def _node(self):
@@ -1648,8 +1648,7 @@ class BasePodContainer(cluster.BaseNode):  # pylint: disable=too-many-public-met
 
     @property
     def _container_status(self):
-        pod_status = self._pod_status
-        if pod_status:
+        if pod_status := self._pod_status:
             return next((x for x in pod_status.container_statuses if x.name == self.parent_cluster.container), None)
         return None
 
@@ -2120,7 +2119,7 @@ class PodCluster(cluster.BaseCluster):
             namespaces = self.k8s_cluster.kubectl(
                 "get namespaces --no-headers -o=custom-columns=:.metadata.name").stdout.split()
             for i in range(1, len(namespaces)):
-                candidate_namespace = f"{namespace_template}{'-' + str(i) if i > 1 else ''}"
+                candidate_namespace = f"{namespace_template}{f'-{str(i)}' if i > 1 else ''}"
                 if candidate_namespace not in namespaces:
                     self.k8s_cluster.kubectl(f"create namespace {candidate_namespace}")
                     return candidate_namespace
@@ -2176,7 +2175,7 @@ class ScyllaPodCluster(cluster.BaseScyllaCluster, PodCluster):  # pylint: disabl
 
     @cluster.wait_for_init_wrap
     def wait_for_init(self, *_, node_list=None, verbose=False, timeout=None, **__):  # pylint: disable=arguments-differ
-        node_list = node_list if node_list else self.nodes
+        node_list = node_list or self.nodes
         self.wait_for_nodes_up_and_normal(nodes=node_list)
         if self.scylla_restart_required:
             self.restart_scylla()
@@ -2216,15 +2215,14 @@ class ScyllaPodCluster(cluster.BaseScyllaCluster, PodCluster):  # pylint: disabl
 
     def add_scylla_cluster_value(self, path: str, element: Any):
         init = self.get_scylla_cluster_value(path) is None
-        if path.endswith('/'):
-            path = path[0:-1]
+        path = path.removesuffix('/')
         if init:
             # You can't add to empty array, so you need to replace it
             operation = "replace"
             value = [element]
         else:
             operation = "add"
-            path = path + "/-"
+            path += "/-"
             value = element
         self._k8s_scylla_cluster_api.patch(
             body=[
@@ -2310,9 +2308,7 @@ class ScyllaPodCluster(cluster.BaseScyllaCluster, PodCluster):  # pylint: disabl
         if self.params.get("server_encrypt"):
             raise NotImplementedError("server_encrypt is not supported by k8s-* backends yet")
 
-        append_scylla_yaml = self.params.get("append_scylla_yaml")
-
-        if append_scylla_yaml:
+        if append_scylla_yaml := self.params.get("append_scylla_yaml"):
             unsupported_options = ("system_key_directory", "system_info_encryption", "kmip_hosts:", )
             if any(substr in append_scylla_yaml for substr in unsupported_options):
                 raise NotImplementedError(
@@ -2527,9 +2523,11 @@ class LoaderPodCluster(cluster.BaseLoaderSet, PodCluster):
                    db_node_address: Optional[str] = None,
                    **kwargs) -> None:
 
-        if 'scylla-bench' in self.params.list_of_stress_tools:
-            if not node.is_scylla_bench_installed:
-                node.install_scylla_bench()
+        if (
+            'scylla-bench' in self.params.list_of_stress_tools
+            and not node.is_scylla_bench_installed
+        ):
+            node.install_scylla_bench()
 
         if self.params.get('client_encrypt'):
             node.config_client_encrypt()

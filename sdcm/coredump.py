@@ -187,11 +187,11 @@ class CoredumpThreadBase(Thread):  # pylint: disable=too-many-instance-attribute
             self, new_cores: Optional[List[CoreDumpInfo]], exclude_cores: List[CoreDumpInfo]) -> List[CoreDumpInfo]:
         output = []
         for new_core_info in new_cores:
-            found = False
-            for e_core_info in exclude_cores:
-                if e_core_info.pid == new_core_info.pid:
-                    found = True
-                    break
+            found = any(
+                e_core_info.pid == new_core_info.pid
+                for e_core_info in exclude_cores
+            )
+
             if found:
                 continue
             self.publish_event(new_core_info)
@@ -207,7 +207,7 @@ class CoredumpThreadBase(Thread):  # pylint: disable=too-many-instance-attribute
         self.log.info('Uploading coredump %s to %s', coredump, upload_url)
         self.node.remoter.run("sudo curl --request PUT --fail --show-error --upload-file "
                               "'%s' 'https://%s'" % (coredump, upload_url))
-        download_url = 'https://storage.cloud.google.com/%s' % upload_url
+        download_url = f'https://storage.cloud.google.com/{upload_url}'
         self.log.info("You can download it by %s (available for ScyllaDB employee)", download_url)
         download_instructions = 'gsutil cp gs://%s .\ngunzip %s' % (upload_url, coredump)
         core_info.download_url, core_info.download_instructions = download_url, download_instructions
@@ -372,7 +372,7 @@ class CoredumpExportSystemdThread(CoredumpThreadBase):
                 timestring = None
                 try:
                     # Converting time string "Tue 2020-01-14 10:40:25 UTC (6min ago)" to timestamp
-                    timestring = re.search(r'Timestamp: ([^\(]+)(\([^\)]+\)|)', line).group(1).strip()
+                    timestring = re.search(r'Timestamp: ([^\(]+)(\([^\)]+\)|)', line)[1].strip()
                     time_spat = timestring.split()
                     if len(time_spat) == 3:
                         fmt = "%a %Y-%m-%d %H:%M:%S"
@@ -458,9 +458,8 @@ class CoredumpExportFileThread(CoredumpThreadBase):
                         node=self.node
                     )
                 )
-        if output:
-            if not self._is_file_installed:
-                self._install_file()
+        if output and not self._is_file_installed:
+            self._install_file()
         return output
 
     @timeout(timeout=600, message='Wait till core is fully dumped')

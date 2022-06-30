@@ -139,11 +139,10 @@ class CassandraStressExporter(StressExporter):
                                lat_max=10, errors=13)
 
     def skip_line(self, line: str) -> bool:
-        if not self.keyspace:
-            if 'Keyspace:' in line:
-                self.keyspace = self.keyspace_regex.match(line).groups()[0]
+        if not self.keyspace and 'Keyspace:' in line:
+            self.keyspace = self.keyspace_regex.match(line).groups()[0]
         # If line starts with 'total,' - skip this line
-        return not 'total,' in line
+        return 'total,' not in line
 
     @staticmethod
     def split_line(line: str) -> list:
@@ -214,7 +213,7 @@ class CassandraHarryStressExporter(StressExporter):
         pass
 
     def skip_line(self, line) -> bool:
-        return not 'Reorder buffer size has grown up to' in line
+        return 'Reorder buffer size has grown up to' not in line
 
     @staticmethod
     def split_line(line: str) -> list:

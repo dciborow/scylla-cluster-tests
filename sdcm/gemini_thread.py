@@ -69,13 +69,15 @@ class GeminiStressThread:  # pylint: disable=too-many-instance-attributes
         self.outputdir = outputdir
         self.gemini_commands = []
         self._gemini_result_file = None
-        self.params = params if params else {}
+        self.params = params or {}
 
     @property
     def gemini_result_file(self):
         if not self._gemini_result_file:
-            self._gemini_result_file = os.path.join(self.loaders.gemini_base_path,
-                                                    "gemini_result_{}.log".format(uuid.uuid4()))
+            self._gemini_result_file = os.path.join(
+                self.loaders.gemini_base_path, f"gemini_result_{uuid.uuid4()}.log"
+            )
+
         return self._gemini_result_file
 
     def _generate_gemini_command(self):
@@ -86,12 +88,10 @@ class GeminiStressThread:  # pylint: disable=too-many-instance-attributes
         test_nodes = ",".join(self.test_cluster.get_node_cql_ips())
         oracle_nodes = ",".join(self.oracle_cluster.get_node_cql_ips()) if self.oracle_cluster else None
 
-        cmd = "/$HOME/{} --test-cluster={} --outfile {} --seed {} ".format(self.gemini_cmd.strip(),
-                                                                           test_nodes,
-                                                                           self.gemini_result_file,
-                                                                           seed)
+        cmd = f"/$HOME/{self.gemini_cmd.strip()} --test-cluster={test_nodes} --outfile {self.gemini_result_file} --seed {seed} "
+
         if oracle_nodes:
-            cmd += "--oracle-cluster={} ".format(oracle_nodes)
+            cmd += f"--oracle-cluster={oracle_nodes} "
         if table_options:
             cmd += " ".join([f"--table-options \"{table_opt}\"" for table_opt in table_options])
         self.gemini_commands.append(cmd)
@@ -109,12 +109,12 @@ class GeminiStressThread:  # pylint: disable=too-many-instance-attributes
         logdir = os.path.join(self.outputdir, node.name)
         os.makedirs(logdir, exist_ok=True)
 
-        log_file_name = os.path.join(logdir,
-                                     'gemini-l%s-%s.log' %
-                                     (loader_idx, uuid.uuid4()))
+        log_file_name = os.path.join(
+            logdir, f'gemini-l{loader_idx}-{uuid.uuid4()}.log'
+        )
+
         gemini_cmd = self._generate_gemini_command()
-        with GeminiEventsPublisher(node=node, gemini_log_filename=log_file_name) as publisher, \
-                GeminiStressEvent(node=node, cmd=gemini_cmd, log_file_name=log_file_name) as gemini_stress_event:
+        with GeminiEventsPublisher(node=node, gemini_log_filename=log_file_name) as publisher, GeminiStressEvent(node=node, cmd=gemini_cmd, log_file_name=log_file_name) as gemini_stress_event:
             try:
                 publisher.event_id = gemini_stress_event.event_id
                 gemini_stress_event.log_file_name = log_file_name
@@ -131,20 +131,22 @@ class GeminiStressThread:  # pylint: disable=too-many-instance-attributes
             if result.exited:
                 gemini_stress_event.add_result(result=result)
                 gemini_stress_event.severity = Severity.ERROR
-            else:
-                if result.stderr:
-                    gemini_stress_event.add_result(result=result)
-                    gemini_stress_event.severity = Severity.WARNING
+            elif result.stderr:
+                gemini_stress_event.add_result(result=result)
+                gemini_stress_event.severity = Severity.WARNING
 
         return node, result, self.gemini_result_file
 
     def get_gemini_results(self):
-        raw_results = []
         parsed_results = []
 
         LOGGER.debug('Wait for %s gemini threads results', len(self.loaders.nodes))
-        for future in concurrent.futures.as_completed(self.futures, timeout=self.timeout):
-            raw_results.append(future.result())
+        raw_results = [
+            future.result()
+            for future in concurrent.futures.as_completed(
+                self.futures, timeout=self.timeout
+            )
+        ]
 
         for node, _, result_file in raw_results:
 
@@ -152,8 +154,7 @@ class GeminiStressThread:  # pylint: disable=too-many-instance-attributes
             node.remoter.receive_files(src=result_file, dst=local_gemini_result_file)
             with open(local_gemini_result_file, encoding="utf-8") as local_file:
                 content = local_file.read()
-                res = self._parse_gemini_summary_json(content)
-                if res:
+                if res := self._parse_gemini_summary_json(content):
                     parsed_results.append(res)
 
         return parsed_results
@@ -170,7 +171,7 @@ class GeminiStressThread:  # pylint: disable=too-many-instance-attributes
                 stats['results'].append(res)
                 for err_type in ['write_errors', 'read_errors', 'errors']:
                     if res.get(err_type, None):
-                        LOGGER.error("Gemini {} errors: {}".format(err_type, res[err_type]))
+                        LOGGER.error(f"Gemini {err_type} errors: {res[err_type]}")
                         stats['status'] = 'FAILED'
                         stats['errors'][err_type] = res[err_type]
         if not stats.get('status'):
@@ -185,7 +186,7 @@ class GeminiStressThread:  # pylint: disable=too-many-instance-attributes
             results = json.loads(json_str)
 
         except Exception as details:  # pylint: disable=broad-except
-            LOGGER.error("Invalid json document {}".format(details))
+            LOGGER.error(f"Invalid json document {details}")
 
         return results.get('result')
 

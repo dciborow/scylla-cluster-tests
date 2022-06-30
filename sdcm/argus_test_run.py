@@ -39,9 +39,19 @@ class ArgusTestRunError(Exception):
 
 def _get_node_amounts(config: SCTConfiguration) -> tuple[int, int]:
     num_db_node = config.get("n_db_nodes")
-    num_db_node = sum([int(i) for i in num_db_node.split()]) if isinstance(num_db_node, str) else num_db_node
+    num_db_node = (
+        sum(int(i) for i in num_db_node.split())
+        if isinstance(num_db_node, str)
+        else num_db_node
+    )
+
     num_loaders = config.get("n_loaders")
-    num_loaders = sum([int(i) for i in num_loaders.split()]) if isinstance(num_loaders, str) else num_loaders
+    num_loaders = (
+        sum(int(i) for i in num_loaders.split())
+        if isinstance(num_loaders, str)
+        else num_loaders
+    )
+
 
     return num_db_node, num_loaders
 
@@ -60,10 +70,11 @@ def _prepare_aws_resource_setup(sct_config: SCTConfiguration) -> AWSSetupDetails
                                         instance_type=sct_config.get("instance_type_monitor"),
                                         node_amount=sct_config.get("n_monitor_nodes"),
                                         post_behaviour=sct_config.get("post_behavior_monitor_nodes"))
-    cloud_setup = AWSSetupDetails(db_node=db_node_setup, loader_node=loader_node_setup,
-                                  monitor_node=monitor_node_setup)
-
-    return cloud_setup
+    return AWSSetupDetails(
+        db_node=db_node_setup,
+        loader_node=loader_node_setup,
+        monitor_node=monitor_node_setup,
+    )
 
 
 def _prepare_gce_resource_setup(sct_config: SCTConfiguration) -> GCESetupDetails:
@@ -80,10 +91,11 @@ def _prepare_gce_resource_setup(sct_config: SCTConfiguration) -> GCESetupDetails
                                         instance_type=sct_config.get("gce_instance_type_monitor"),
                                         node_amount=sct_config.get("n_monitor_nodes"),
                                         post_behaviour=sct_config.get("post_behavior_monitor_nodes"))
-    cloud_setup = GCESetupDetails(db_node=db_node_setup, loader_node=loader_node_setup,
-                                  monitor_node=monitor_node_setup)
-
-    return cloud_setup
+    return GCESetupDetails(
+        db_node=db_node_setup,
+        loader_node=loader_node_setup,
+        monitor_node=monitor_node_setup,
+    )
 
 
 def _prepare_azure_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSetupDetails:
@@ -100,10 +112,12 @@ def _prepare_azure_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSetu
                                         instance_type=sct_config.get("azure_instance_type_monitor"),
                                         node_amount=sct_config.get("n_monitor_nodes"),
                                         post_behaviour=sct_config.get("post_behavior_monitor_nodes"))
-    cloud_setup = BaseCloudSetupDetails(db_node=db_node_setup, loader_node=loader_node_setup,
-                                        monitor_node=monitor_node_setup, backend=sct_config.get("cluster_backend"))
-
-    return cloud_setup
+    return BaseCloudSetupDetails(
+        db_node=db_node_setup,
+        loader_node=loader_node_setup,
+        monitor_node=monitor_node_setup,
+        backend=sct_config.get("cluster_backend"),
+    )
 
 
 def _prepare_unknown_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSetupDetails:
@@ -120,10 +134,12 @@ def _prepare_unknown_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSe
                                         instance_type="UNKNOWN",
                                         node_amount=-1,
                                         post_behaviour="UNKNOWN")
-    cloud_setup = BaseCloudSetupDetails(db_node=db_node_setup, loader_node=loader_node_setup,
-                                        monitor_node=monitor_node_setup, backend=sct_config.get("cluster_backend"))
-
-    return cloud_setup
+    return BaseCloudSetupDetails(
+        db_node=db_node_setup,
+        loader_node=loader_node_setup,
+        monitor_node=monitor_node_setup,
+        backend=sct_config.get("cluster_backend"),
+    )
 
 
 def _prepare_bare_metal_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSetupDetails:
@@ -139,10 +155,12 @@ def _prepare_bare_metal_resource_setup(sct_config: SCTConfiguration) -> BaseClou
                                         instance_type="bare_metal",
                                         node_amount=sct_config.get("n_monitor_nodes"),
                                         post_behaviour=sct_config.get("post_behavior_monitor_nodes"))
-    cloud_setup = BaseCloudSetupDetails(db_node=db_node_setup, loader_node=loader_node_setup,
-                                        monitor_node=monitor_node_setup, backend=sct_config.get("cluster_backend"))
-
-    return cloud_setup
+    return BaseCloudSetupDetails(
+        db_node=db_node_setup,
+        loader_node=loader_node_setup,
+        monitor_node=monitor_node_setup,
+        backend=sct_config.get("cluster_backend"),
+    )
 
 
 def _prepare_k8s_gce_minikube_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSetupDetails:
@@ -166,9 +184,7 @@ def _prepare_k8s_gke_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSe
 
 
 def _prepare_k8s_eks_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSetupDetails:
-    cloud_setup = _prepare_aws_resource_setup(sct_config)
-
-    return cloud_setup
+    return _prepare_aws_resource_setup(sct_config)
 
 
 def _prepare_docker_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSetupDetails:
@@ -184,10 +200,12 @@ def _prepare_docker_resource_setup(sct_config: SCTConfiguration) -> BaseCloudSet
                                         instance_type="docker",
                                         node_amount=sct_config.get("n_monitor_nodes"),
                                         post_behaviour=sct_config.get("post_behavior_monitor_nodes"))
-    cloud_setup = BaseCloudSetupDetails(db_node=db_node_setup, loader_node=loader_node_setup,
-                                        monitor_node=monitor_node_setup, backend=sct_config.get("cluster_backend"))
-
-    return cloud_setup
+    return BaseCloudSetupDetails(
+        db_node=db_node_setup,
+        loader_node=loader_node_setup,
+        monitor_node=monitor_node_setup,
+        backend=sct_config.get("cluster_backend"),
+    )
 
 
 class ArgusTestRun:

@@ -166,13 +166,17 @@ class ArtifactsTest(ClusterTester):
                 self.log.info("Skipping user %s since it is a default image user.", user)
                 continue
             self.log.info("Checking user: '%s'", user)
-            if datetime_str := re.search(r"(\d+-\d+-\d+ \d+:\d+:\d+).", line):
-                datetime_user_created = datetime.datetime.strptime(datetime_str.group(1), datetime_format)
-                self.log.info("User '%s' created at '%s'", user, datetime_user_created)
-                if datetime_user_created < instance_start_time and not user == "centos":
-                    AssertionError("User %s was created in the image. Only user centos should exist in the image")
-            else:
+            if not (
+                datetime_str := re.search(r"(\d+-\d+-\d+ \d+:\d+:\d+).", line)
+            ):
                 raise AssertionError(f"Unable to parse/find timestamp of the user {user} creation in {line}")
+            datetime_user_created = datetime.datetime.strptime(
+                datetime_str[1], datetime_format
+            )
+
+            self.log.info("User '%s' created at '%s'", user, datetime_user_created)
+            if datetime_user_created < instance_start_time and user != "centos":
+                AssertionError("User %s was created in the image. Only user centos should exist in the image")
         self.log.info("All users except image user 'centos' were created after the boot.")
 
     def verify_node_health(self):
@@ -232,17 +236,17 @@ class ArtifactsTest(ClusterTester):
             self.assertEqual(configured_value, expected_value)
 
     def verify_docker_latest_match_release(self) -> None:
+        url = 'https://hub.docker.com/v2/repositories/scylladb/{}/tags/{}'
         for product in typing.get_args(ScyllaProduct):
             latest_version = get_latest_scylla_release(product=product)
 
-            url = 'https://hub.docker.com/v2/repositories/scylladb/{}/tags/{}'
             docker_latest = requests.get(url.format(product, 'latest')).json()
             docker_release = requests.get(url.format(product, latest_version)).json()
             self.log.debug('latest info: %s', pprint.pformat(docker_latest))
             self.log.debug('%s info: %s ', latest_version, pprint.pformat(docker_release))
 
-            latest_digests = set(image['digest'] for image in docker_latest['images'])
-            release_digests = set(image['digest'] for image in docker_release['images'])
+            latest_digests = {image['digest'] for image in docker_latest['images']}
+            release_digests = {image['digest'] for image in docker_release['images']}
 
             assert latest_digests == release_digests, \
                 f"latest != {latest_version}, images digest differs [{latest_digests}] != [{release_digests}]"
@@ -415,10 +419,7 @@ class ArtifactsTest(ClusterTester):
             node = self.node
         except Exception:  # pylint: disable=broad-except
             node = None
-        if node:
-            scylla_packages = node.scylla_packages_installed
-        else:
-            scylla_packages = None
+        scylla_packages = node.scylla_packages_installed if node else None
         if not scylla_packages:
             scylla_packages = ['No scylla packages are installed. Please check log files.']
         email_data.update({"scylla_node_image": node.image if node else 'Node has not been initialized',

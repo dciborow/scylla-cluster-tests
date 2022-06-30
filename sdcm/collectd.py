@@ -24,7 +24,7 @@ class CollectdSetup():  # pylint: disable=too-many-instance-attributes
 
         self.collectd_exporter_system_base_dir = '/var/tmp'  # pylint: disable=invalid-name
         self.collectd_exporter_base_dir = 'collectd_exporter-0.3.1.linux-amd64'
-        self.collectd_exporter_tarball = '%s.tar.gz' % self.collectd_exporter_base_dir
+        self.collectd_exporter_tarball = f'{self.collectd_exporter_base_dir}.tar.gz'
         self.collectd_exporter_base_url = 'https://github.com/prometheus/collectd_exporter/releases/download/0.3.1'
         self.collectd_exporter_system_dir = os.path.join(
             self.collectd_exporter_system_base_dir, self.collectd_exporter_base_dir)
@@ -51,7 +51,7 @@ class CollectdSetup():  # pylint: disable=too-many-instance-attributes
             tmp_cfg_prom.write(self._collectd_cfg)   # pylint: disable=no-member
         try:
             self.node.remoter.send_files(src=tmp_path_exporter, dst=tmp_path_remote)
-            command = "sudo mv %s %s" % (tmp_path_remote, system_path_remote)
+            command = f"sudo mv {tmp_path_remote} {system_path_remote}"
             self.node.remoter.run(command)
             self.node.remoter.run('sudo sh -c "echo FQDNLookup   false >> /etc/collectd.conf"')
             self.start_collectd_service()
@@ -62,14 +62,15 @@ class CollectdSetup():  # pylint: disable=too-many-instance-attributes
         self.node = node
 
         self._setup_collectd()
-        self.node.remoter.run('curl --insecure %s/%s -o %s/%s -L' %
-                              (self.collectd_exporter_base_url, self.collectd_exporter_tarball,
-                               self.collectd_exporter_system_base_dir, self.collectd_exporter_tarball))
-        self.node.remoter.run('tar -xzvf %s/%s -C %s' %
-                              (self.collectd_exporter_system_base_dir,
-                               self.collectd_exporter_tarball,
-                               self.collectd_exporter_system_base_dir),
-                              verbose=False)
+        self.node.remoter.run(
+            f'curl --insecure {self.collectd_exporter_base_url}/{self.collectd_exporter_tarball} -o {self.collectd_exporter_system_base_dir}/{self.collectd_exporter_tarball} -L'
+        )
+
+        self.node.remoter.run(
+            f'tar -xzvf {self.collectd_exporter_system_base_dir}/{self.collectd_exporter_tarball} -C {self.collectd_exporter_system_base_dir}',
+            verbose=False,
+        )
+
         self.collectd_exporter_setup()
 
 
@@ -352,8 +353,7 @@ end script
             tmp_cfg_prom.write(service_file)
         try:
             self.node.remoter.send_files(src=tmp_path_exporter, dst=tmp_path_remote)
-            self.node.remoter.run('sudo mv %s %s' %
-                                  (tmp_path_remote, system_path_remote))
+            self.node.remoter.run(f'sudo mv {tmp_path_remote} {system_path_remote}')
             self.node.remoter.run('sudo service collectd_exporter restart')
         finally:
             shutil.rmtree(tmp_dir_exporter)
@@ -456,8 +456,7 @@ LoadPlugin processes
             tmp_cfg_prom.write(service_file)
         try:
             self.node.remoter.send_files(src=tmp_path_exporter, dst=tmp_path_remote)
-            self.node.remoter.run('sudo mv %s %s' %
-                                  (tmp_path_remote, system_path_remote))
+            self.node.remoter.run(f'sudo mv {tmp_path_remote} {system_path_remote}')
             self.node.remoter.run('sudo service collectd_exporter restart')
         finally:
             shutil.rmtree(tmp_dir_exporter)
@@ -475,14 +474,15 @@ LoadPlugin processes
         else:
             self.node.remoter.run('sudo apt-get install -y collectd')
         self._setup_collectd()
-        self.node.remoter.run('curl --insecure %s/%s -o %s/%s -L' %
-                              (self.collectd_exporter_base_url, self.collectd_exporter_tarball,
-                               self.collectd_exporter_system_base_dir, self.collectd_exporter_tarball))
-        self.node.remoter.run('tar -xzvf %s/%s -C %s' %
-                              (self.collectd_exporter_system_base_dir,
-                               self.collectd_exporter_tarball,
-                               self.collectd_exporter_system_base_dir),
-                              verbose=False)
+        self.node.remoter.run(
+            f'curl --insecure {self.collectd_exporter_base_url}/{self.collectd_exporter_tarball} -o {self.collectd_exporter_system_base_dir}/{self.collectd_exporter_tarball} -L'
+        )
+
+        self.node.remoter.run(
+            f'tar -xzvf {self.collectd_exporter_system_base_dir}/{self.collectd_exporter_tarball} -C {self.collectd_exporter_system_base_dir}',
+            verbose=False,
+        )
+
         if self.node.is_ubuntu14():
             self.collectd_exporter_service_setup()
         else:

@@ -74,10 +74,7 @@ class CollectingNode(AutoSshContainerMixin, WebDriverContainerMixin):
         self.ssh_login_info = ssh_login_info
         self._instance = instance
         self.external_address = global_ip
-        if grafana_ip is None:
-            self.grafana_address = global_ip
-        else:
-            self.grafana_address = grafana_ip
+        self.grafana_address = global_ip if grafana_ip is None else grafana_ip
         self.tags = {**(tags or {}), "Name": self.name, }
 
 
@@ -195,7 +192,9 @@ class FileLog(CommandLog):
                 full_path = os.path.join(root, f)
                 if except_patterns in full_path:
                     continue
-                if full_path.endswith(search_pattern) or fnmatch.fnmatch(full_path, "*{}".format(search_pattern)):
+                if full_path.endswith(search_pattern) or fnmatch.fnmatch(
+                    full_path, f"*{search_pattern}"
+                ):
                     if os.path.islink(full_path):
                         full_path = os.path.realpath(full_path)
                     local_files.append(full_path)
@@ -205,23 +204,23 @@ class FileLog(CommandLog):
     def find_on_builder(builder, file_name, search_in_dir="/"):  # pylint: disable=unused-argument
         result = builder.remoter.run('find {search_in_dir} -name {file_name}'.format(**locals()),
                                      ignore_status=True)
-        if not result.exited and not result.stderr:
-            path = result.stdout.strip()
-        else:
-            path = None
-
-        return path
+        return (
+            result.stdout.strip()
+            if not result.exited and not result.stderr
+            else None
+        )
 
     def _is_file_collected(self, local_dst):
-        for collected_file in os.listdir(local_dst):
-            if self.name in collected_file or fnmatch.fnmatch(collected_file, "*{}".format(self.name)):
-                return True
-        return False
+        return any(
+            self.name in collected_file
+            or fnmatch.fnmatch(collected_file, f"*{self.name}")
+            for collected_file in os.listdir(local_dst)
+        )
 
     def collect(self, node, local_dst, remote_dst=None, local_search_path=None):
         os.makedirs(local_dst, exist_ok=True)
         if self.search_locally and local_search_path:
-            search_pattern = self.name if not node else "/".join([node.name, self.name])
+            search_pattern = "/".join([node.name, self.name]) if node else self.name
             local_logfiles = self.find_local_files(local_search_path, search_pattern)
             for logfile in local_logfiles:
                 shutil.copy(src=logfile, dst=local_dst)
@@ -292,10 +291,10 @@ class PrometheusSnapshots(BaseMonitoringEntity):
         prometheus_client = PrometheusDBStats(host=node.external_address)
         result = prometheus_client.create_snapshot()
         if result and "success" in result['status']:
-            snapshot_dir = os.path.join(self.monitoring_data_dir,
-                                        "snapshots",
-                                        result['data']['name'])
-            return snapshot_dir
+            return os.path.join(
+                self.monitoring_data_dir, "snapshots", result['data']['name']
+            )
+
         else:
             raise PrometheusSnapshotErrorException(result)
 
@@ -497,11 +496,11 @@ class GrafanaScreenShot(GrafanaEntity):
                         grafana_port=self.grafana_port,
                         path=dashboard_metadata["url"],
                         st=self.start_time)
-                    screenshot_path = os.path.join(local_dst,
-                                                   "%s-%s-%s-%s.png" % (self.name,
-                                                                        dashboard.name,
-                                                                        datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
-                                                                        node.name))
+                    screenshot_path = os.path.join(
+                        local_dst,
+                        f'{self.name}-{dashboard.name}-{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}-{node.name}.png',
+                    )
+
                     self.remote_browser.open(grafana_url, dashboard.resolution)
                     dashboard.scroll_to_bottom(self.remote_browser.browser)
                     dashboard.wait_panels_loading(self.remote_browser.browser)
@@ -630,13 +629,17 @@ class LogCollector:
                 entity.set_params(self.params)
 
     def create_local_storage_dir(self, base_local_dir):
-        local_dir = os.path.join(base_local_dir, self.current_run,
-                                 "{}-{}".format(self.cluster_log_type, self.test_id[:8]))
+        local_dir = os.path.join(
+            base_local_dir,
+            self.current_run,
+            f"{self.cluster_log_type}-{self.test_id[:8]}",
+        )
+
         try:
             os.makedirs(local_dir, exist_ok=True)
         except OSError as details:
             if not os.path.exists(local_dir):
-                LOGGER.error("Folder is not created. {}".format(details))
+                LOGGER.error(f"Folder is not created. {details}")
                 raise
         return local_dir
 
@@ -645,11 +648,10 @@ class LogCollector:
             path = node.name
         try:
             remote_dir = os.path.join(self.node_remote_dir, path)
-            result = node.remoter.run('mkdir -p {}'.format(remote_dir), ignore_status=True)
+            result = node.remoter.run(f'mkdir -p {remote_dir}', ignore_status=True)
 
             if result.exited > 0:
-                LOGGER.error(
-                    'Remote storing folder not created.\n{}'.format(result))
+                LOGGER.error(f'Remote storing folder not created.\n{result}')
                 remote_dir = self.node_remote_dir
 
         except Exception as details:  # pylint: disable=broad-except
@@ -672,7 +674,10 @@ class LogCollector:
         if not node.remoter:
             return None
         archive_dir, log_filename = os.path.split(log_filename)
-        archive_name = os.path.join(archive_dir, archive_name or log_filename) + ".tar.gz"
+        archive_name = (
+            f"{os.path.join(archive_dir, archive_name or log_filename)}.tar.gz"
+        )
+
         if not node.remoter.run(f"tar czf '{archive_name}' -C '{archive_dir}' '{log_filename}'", ignore_status=True).ok:
             LOGGER.error("Unable to archive log `%s' to `%s'", log_filename, archive_name)
             return None
@@ -962,12 +967,9 @@ class SCTLogCollector(LogCollector):
                 return []
 
         if self.is_collect_to_a_single_archive:
-            s3_links = self.create_single_archive_and_upload()
-        else:
-            LOGGER.info("SCT log files are too big, uploading them separately")
-            s3_links = self.create_archive_per_file_and_upload()
-
-        return s3_links
+            return self.create_single_archive_and_upload()
+        LOGGER.info("SCT log files are too big, uploading them separately")
+        return self.create_archive_per_file_and_upload()
 
     def get_files_size(self) -> int:
         total_size = 0
@@ -1192,7 +1194,7 @@ class Collector:  # pylint: disable=too-many-instance-attributes,
 
     @property
     def sct_result_dir(self):
-        return self._test_dir if self._test_dir else os.path.join(self.base_dir, "sct-results")
+        return self._test_dir or os.path.join(self.base_dir, "sct-results")
 
     def define_test_id(self):
         if not self._test_id:

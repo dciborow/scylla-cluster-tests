@@ -125,18 +125,23 @@ class ScyllaBenchThread:  # pylint: disable=too-many-instance-attributes
         # Find stress mode:
         #    "scylla-bench -workload=sequential -mode=write -replication-factor=3 -partition-count=100"
         #    "scylla-bench -workload=uniform -mode=read -replication-factor=3 -partition-count=100"
-        self.sb_mode: ScyllaBenchModes = ScyllaBenchModes(re.search(r"-mode=(.+?) ", stress_cmd).group(1))
+        self.sb_mode: ScyllaBenchModes = ScyllaBenchModes(
+            re.search(r"-mode=(.+?) ", stress_cmd)[1]
+        )
+
         self.sb_workload: ScyllaBenchWorkloads = ScyllaBenchWorkloads(
-            re.search(r"-workload=(.+?) ", stress_cmd).group(1))
+            re.search(r"-workload=(.+?) ", stress_cmd)[1]
+        )
 
     def verify_results(self):
         sb_summary = []
-        results = []
         errors = []
 
         LOGGER.debug('Wait for stress threads results')
-        for future in as_completed(self.results_futures, timeout=self.timeout):
-            results.append(future.result())
+        results = [
+            future.result()
+            for future in as_completed(self.results_futures, timeout=self.timeout)
+        ]
 
         for _, result in results:
             if not result:
@@ -145,9 +150,7 @@ class ScyllaBenchThread:  # pylint: disable=too-many-instance-attributes
             output = result.stdout + result.stderr
 
             lines = output.splitlines()
-            node_cs_res = self._parse_bench_summary(lines)  # pylint: disable=protected-access
-
-            if node_cs_res:
+            if node_cs_res := self._parse_bench_summary(lines):
                 sb_summary.append(node_cs_res)
 
         return sb_summary, errors
@@ -178,13 +181,11 @@ class ScyllaBenchThread:  # pylint: disable=too-many-instance-attributes
         ips = node_list[0].cql_ip_address
 
         with ScyllaBenchStressExporter(instance_name=node.cql_ip_address,
-                                       metrics=nemesis_metrics_obj(),
-                                       stress_operation=self.sb_mode,
-                                       stress_log_filename=log_file_name,
-                                       loader_idx=loader_idx), \
-                ScyllaBenchStressEventsPublisher(node=node, sb_log_filename=log_file_name) as publisher, \
-                ScyllaBenchEvent(node=node, stress_cmd=stress_cmd,
-                                 log_file_name=log_file_name) as scylla_bench_event:
+                                           metrics=nemesis_metrics_obj(),
+                                           stress_operation=self.sb_mode,
+                                           stress_log_filename=log_file_name,
+                                           loader_idx=loader_idx), ScyllaBenchStressEventsPublisher(node=node, sb_log_filename=log_file_name) as publisher, ScyllaBenchEvent(node=node, stress_cmd=stress_cmd,
+                                     log_file_name=log_file_name) as scylla_bench_event:
             publisher.event_id = scylla_bench_event.event_id
             result = None
             try:
@@ -194,13 +195,13 @@ class ScyllaBenchThread:  # pylint: disable=too-many-instance-attributes
                     log_file=log_file_name)
             except Exception as exc:  # pylint: disable=broad-except
                 errors_str = format_stress_cmd_error(exc)
-                if "truncate: seastar::rpc::timeout_error" in errors_str:
+                if (
+                    "truncate: seastar::rpc::timeout_error" in errors_str
+                    or not self.stop_test_on_failure
+                ):
                     scylla_bench_event.severity = Severity.ERROR
-                elif self.stop_test_on_failure:
-                    scylla_bench_event.severity = Severity.CRITICAL
                 else:
-                    scylla_bench_event.severity = Severity.ERROR
-
+                    scylla_bench_event.severity = Severity.CRITICAL
                 scylla_bench_event.add_error([errors_str])
 
         return node, result
@@ -209,8 +210,13 @@ class ScyllaBenchThread:  # pylint: disable=too-many-instance-attributes
         if self.round_robin:
             loaders = [self.loader_set.get_loader()]
         else:
-            loaders = self.loader_set.nodes if not self.use_single_loader else [self.loader_set.nodes[0]]
-        LOGGER.debug("Round-Robin through loaders, Selected loader is {} ".format(loaders))
+            loaders = (
+                [self.loader_set.nodes[0]]
+                if self.use_single_loader
+                else self.loader_set.nodes
+            )
+
+        LOGGER.debug(f"Round-Robin through loaders, Selected loader is {loaders} ")
 
         for loader in loaders:
             if not loader.is_scylla_bench_installed:
@@ -260,10 +266,7 @@ class ScyllaBenchThread:  # pylint: disable=too-many-instance-attributes
             key = split[0].strip()
             value = ' '.join(split[1].split())
             if target_key := cls._SB_STATS_MAPPING.get(key):
-                if value.isdecimal():
-                    value = int(value)
-                else:
-                    value = convert_metric_to_ms(value)
+                value = int(value) if value.isdecimal() else convert_metric_to_ms(value)
                 results[target_key] = value
             else:
                 LOGGER.debug('unknown result key found: `%s` with value `%s`', key, value)

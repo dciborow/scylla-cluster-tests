@@ -106,9 +106,15 @@ class CassandraStressThread:  # pylint: disable=too-many-instance-attributes
             self.keyspace_name = keyspace_name
 
         if self.keyspace_name:
-            stress_cmd = stress_cmd.replace(" -schema ", " -schema keyspace={} ".format(self.keyspace_name))
+            stress_cmd = stress_cmd.replace(
+                " -schema ", f" -schema keyspace={self.keyspace_name} "
+            )
+
         elif 'keyspace=' not in stress_cmd:  # if keyspace is defined in the command respect that
-            stress_cmd = stress_cmd.replace(" -schema ", " -schema keyspace=keyspace{} ".format(keyspace_idx))
+            stress_cmd = stress_cmd.replace(
+                " -schema ", f" -schema keyspace=keyspace{keyspace_idx} "
+            )
+
 
         credentials = self.loader_set.get_db_auth()
         if credentials and 'user=' not in stress_cmd:
@@ -122,7 +128,7 @@ class CassandraStressThread:  # pylint: disable=too-many-instance-attributes
             first_node = [n for n in self.node_list if n.dc_idx == loader_idx %
                           3]  # make sure each loader is targeting on datacenter/region
             first_node = first_node[0] if first_node else self.node_list[0]
-            stress_cmd += " -node {}".format(first_node.cql_ip_address)
+            stress_cmd += f" -node {first_node.cql_ip_address}"
         if 'skip-unsupported-columns' in self._get_available_suboptions(node, '-errors'):
             stress_cmd = self._add_errors_option(stress_cmd, ['skip-unsupported-columns'])
         return stress_cmd
@@ -210,7 +216,7 @@ class CassandraStressThread:  # pylint: disable=too-many-instance-attributes
             # cancel stress_num
             self.stress_num = 1
             loaders = [self.loader_set.get_loader()]
-            LOGGER.debug("Round-Robin through loaders, Selected loader is {} ".format(loaders))
+            LOGGER.debug(f"Round-Robin through loaders, Selected loader is {loaders} ")
         else:
             loaders = self.loader_set.nodes
 
@@ -243,11 +249,13 @@ class CassandraStressThread:  # pylint: disable=too-many-instance-attributes
 
     def get_results(self) -> list[dict | None]:
         ret = []
-        results = []
-
         LOGGER.debug('Wait for %s stress threads results', self.max_workers)
-        for future in concurrent.futures.as_completed(self.results_futures, timeout=self.timeout):
-            results.append(future.result())
+        results = [
+            future.result()
+            for future in concurrent.futures.as_completed(
+                self.results_futures, timeout=self.timeout
+            )
+        ]
 
         for _, result, event in results:
             if not result:
@@ -256,8 +264,7 @@ class CassandraStressThread:  # pylint: disable=too-many-instance-attributes
             output = result.stdout + result.stderr
             try:
                 lines = output.splitlines()
-                node_cs_res = BaseLoaderSet._parse_cs_summary(lines)  # pylint: disable=protected-access
-                if node_cs_res:
+                if node_cs_res := BaseLoaderSet._parse_cs_summary(lines):
                     ret.append(node_cs_res)
             except Exception as exc:  # pylint: disable=broad-except
                 event.add_error([f"Failed to process stress summary due to {exc}"])
@@ -267,13 +274,16 @@ class CassandraStressThread:  # pylint: disable=too-many-instance-attributes
         return ret
 
     def verify_results(self):
-        results = []
         cs_summary = []
         errors = []
 
         LOGGER.debug('Wait for %s stress threads to verify', self.max_workers)
-        for future in concurrent.futures.as_completed(self.results_futures, timeout=self.timeout):
-            results.append(future.result())
+        results = [
+            future.result()
+            for future in concurrent.futures.as_completed(
+                self.results_futures, timeout=self.timeout
+            )
+        ]
 
         for node, result, _ in results:
             if not result:
@@ -281,12 +291,11 @@ class CassandraStressThread:  # pylint: disable=too-many-instance-attributes
                 continue
             output = result.stdout + result.stderr
             lines = output.splitlines()
-            node_cs_res = BaseLoaderSet._parse_cs_summary(lines)  # pylint: disable=protected-access
-            if node_cs_res:
+            if node_cs_res := BaseLoaderSet._parse_cs_summary(lines):
                 cs_summary.append(node_cs_res)
             for line in lines:
                 if 'java.io.IOException' in line:
-                    errors += ['%s: %s' % (node, line.strip())]
+                    errors += [f'{node}: {line.strip()}']
 
         return cs_summary, errors
 
@@ -315,7 +324,7 @@ class DockerBasedStressThread:
         if self.round_robin:
             self.stress_num = 1
             loaders = [self.loader_set.get_loader()]
-            LOGGER.debug("Round-Robin through loaders, Selected loader is {} ".format(loaders))
+            LOGGER.debug(f"Round-Robin through loaders, Selected loader is {loaders} ")
         else:
             loaders = self.loader_set.nodes
         self.loaders = loaders
@@ -335,21 +344,25 @@ class DockerBasedStressThread:
         raise NotImplementedError()
 
     def get_results(self):
-        results = []
         timeout = self.timeout + 120
         LOGGER.debug('Wait for %s stress threads results', self.max_workers)
-        for future in concurrent.futures.as_completed(self.results_futures, timeout=timeout):
-            results.append(future.result())
-
-        return results
+        return [
+            future.result()
+            for future in concurrent.futures.as_completed(
+                self.results_futures, timeout=timeout
+            )
+        ]
 
     def verify_results(self):
-        results = []
         errors = []
         timeout = self.timeout + 120
         LOGGER.debug('Wait for %s stress threads to verify', self.max_workers)
-        for future in concurrent.futures.as_completed(self.results_futures, timeout=timeout):
-            results.append(future.result())
+        results = [
+            future.result()
+            for future in concurrent.futures.as_completed(
+                self.results_futures, timeout=timeout
+            )
+        ]
 
         return results, errors
 

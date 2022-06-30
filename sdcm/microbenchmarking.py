@@ -93,14 +93,13 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
     def _get_prior_tests(self, filter_path, additional_filter=''):
         query = f"hostname:'{self.hostname}' AND versions.scylla-server.version:{self.db_version[:3]}*"
         if additional_filter:
-            query += " AND " + additional_filter
-        output = self._es.search(  # pylint: disable=unexpected-keyword-arg; pylint doesn't understand Elasticsearch code
+            query += f" AND {additional_filter}"
+        return self._es.search(  # pylint: disable=unexpected-keyword-arg; pylint doesn't understand Elasticsearch code
             index=self._es_index,
             q=query,
             size=self._limit,
             filter_path=filter_path,
         )
-        return output
 
     def check_regression(self, current_results):  # pylint: disable=arguments-differ
         # pylint: disable=too-many-locals, too-many-statements
@@ -290,7 +289,7 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
 
     def send_html_report(self, report_results, html_report_path=None):
 
-        subject = "Microbenchmarks - Performance Regression - %s" % self.test_run_date
+        subject = f"Microbenchmarks - Performance Regression - {self.test_run_date}"
         dashboard_path = "app/kibana#/dashboard/aee9b370-09db-11e9-a976-2fe0f5890cd0?_g=(filters%3A!())"
 
         for_render = {
@@ -306,10 +305,11 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
             "test_version": self.cur_version_info
         }
 
-        if html_report_path:
-            html_file_path = html_report_path
-        else:
-            html_file_path = tempfile.mkstemp(suffix=".html", prefix="microbenchmarking-")[1]
+        html_file_path = (
+            html_report_path
+            or tempfile.mkstemp(suffix=".html", prefix="microbenchmarking-")[1]
+        )
+
         self.render_to_html(for_render, html_file_path=html_file_path)
         for_render["full_report"] = False
         summary_html = self.render_to_html(for_render)
@@ -328,21 +328,22 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
                 self.log.info(fullpath)
                 if (os.path.dirname(fullpath).endswith('perf_fast_forward_output') and
                         len(subdirs) > 1):
-                    raise LargeNumberOfDatasetsException('Test set {} has more than one datasets: {}'.format(
-                        os.path.basename(fullpath),
-                        subdirs))
+                    raise LargeNumberOfDatasetsException(
+                        f'Test set {os.path.basename(fullpath)} has more than one datasets: {subdirs}'
+                    )
+
 
                 if not subdirs:
                     dataset_name = os.path.basename(fullpath)
-                    self.log.info('Dataset name: {}'.format(dataset_name))
+                    self.log.info(f'Dataset name: {dataset_name}')
                     dirname = os.path.basename(os.path.dirname(fullpath))
-                    self.log.info("Test set: {}".format(dirname))
+                    self.log.info(f"Test set: {dirname}")
                     for filename in files:
                         if filename.startswith('.'):
                             continue
                         new_filename = "".join(c for c in filename if c not in bad_chars)
                         test_args = os.path.splitext(new_filename)[0]
-                        test_type = dirname + "_" + test_args
+                        test_type = f"{dirname}_{test_args}"
                         json_path = os.path.join(dirname, dataset_name, filename)
                         with open(json_path, encoding="utf-8") as json_file:
                             self.log.info("Reading: %s", json_path)
@@ -354,8 +355,13 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
                                           'excluded': False
                                           })
                         if update_db:
-                            self._es.create_doc(index=self._es_index, doc_type=self._es_doc_type,
-                                                doc_id="%s_%s" % (self.test_run_date, test_type), body=datastore)
+                            self._es.create_doc(
+                                index=self._es_index,
+                                doc_type=self._es_doc_type,
+                                doc_id=f"{self.test_run_date}_{test_type}",
+                                body=datastore,
+                            )
+
                         results[test_type] = datastore
             if not results:
                 raise EmptyResultFolder("perf_fast_forward_output folder is empty")
@@ -376,7 +382,7 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
             self.log.info("Nothing to exclude")
             return
 
-        self.log.info('Exclude testrun {} from results'.format(testrun_id))
+        self.log.info(f'Exclude testrun {testrun_id} from results')
         filter_path = (
             "hits.hits._id",  # '2018-04-02_18:36:47_large-partition-skips_[64-32.1)'
             "hits.hits._source.hostname",  # 'godzilla.cloudius-systems.com'
@@ -409,9 +415,8 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
             self.log.info("Nothing to exclude")
             return
 
-        self.log.info('Exclude test id {} from results'.format(test_id))
-        doc = self._es.get_doc(index=self._es_index, doc_id=test_id)
-        if doc:
+        self.log.info(f'Exclude test id {test_id} from results')
+        if doc := self._es.get_doc(index=self._es_index, doc_id=test_id):
             self._es.update_doc(index=self._es_index,
                                 doc_type=self._es_doc_type,
                                 doc_id=doc['_id'],
@@ -450,7 +455,7 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
             "hits.hits._source.hostname",
             "hits.hits._source.versions.scylla-server.run_date_time"
         )
-        self.log.info('Exclude tests before date {}'.format(date))
+        self.log.info(f'Exclude tests before date {date}')
         results = self._es.search(index=self._es_index, filter_path=filter_path, size=self._limit,  # pylint: disable=unexpected-keyword-arg
                                   q="hostname:'%s' AND versions.scylla-server.version:%s*" %
                                   (self.hostname, self.db_version[:3]))
@@ -483,14 +488,14 @@ class MicroBenchmarkingResultsAnalyzer(BaseResultsAnalyzer):  # pylint: disable=
             "hits.hits._source.test_run_date"
         )
 
-        self.log.info('Exclude tests by commit id #{}'.format(commit_id))
+        self.log.info(f'Exclude tests by commit id #{commit_id}')
 
         results = self._es.search(index=self._es_index, filter_path=filter_path, size=self._limit,  # pylint: disable=unexpected-keyword-arg
                                   q="hostname:'{}' \
                                   AND versions.scylla-server.version:{}*\
                                   AND versions.scylla-server.commit_id:'{}'".format(self.hostname, self.db_version[:3], commit_id))
         if not results:
-            self.log.info('There is no testrun results for commit id #{}'.format(commit_id))
+            self.log.info(f'There is no testrun results for commit id #{commit_id}')
             return
 
         for doc in results['hits']['hits']:
@@ -517,8 +522,9 @@ def main(args):
             mbra.exclude_testrun_by_commit_id(args.commit_id)
     if args.mode == 'check':
         mbra = MicroBenchmarkingResultsAnalyzer(email_recipients=args.email_recipients.split(","))
-        results = mbra.get_results(results_path=args.results_path, update_db=args.update_db)
-        if results:
+        if results := mbra.get_results(
+            results_path=args.results_path, update_db=args.update_db
+        ):
             if args.hostname:
                 mbra.hostname = args.hostname
             report_results = mbra.check_regression(results)

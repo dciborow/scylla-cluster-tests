@@ -42,8 +42,10 @@ def truncate_entries(func):
         node = args[0]
         if self.truncate_entries_flag:
             base_version = self.params.get('scylla_version')
-            system_truncated = bool(parse_version(base_version) >= parse_version('3.1')
-                                    and not is_enterprise(base_version))
+            system_truncated = parse_version(base_version) >= parse_version(
+                '3.1'
+            ) and not is_enterprise(base_version)
+
             with self.db_cluster.cql_connection_patient(node, keyspace='truncate_ks') as session:
                 self.cql_truncate_simple_tables(session=session, rows=self.insert_rows)
                 self.validate_truncated_entries_for_table(session=session, system_truncated=system_truncated)
@@ -64,7 +66,7 @@ def truncate_entries(func):
 
 def check_reload_systemd_config(node):
     for i in ['scylla-server', 'scylla-jmx']:
-        result = node.remoter.run('systemctl status %s' % i, ignore_status=True)
+        result = node.remoter.run(f'systemctl status {i}', ignore_status=True)
         if ".service changed on disk. Run 'systemctl daemon-reload' to reload units" in result.stderr:
             raise Exception("Systemd config is changed, but not reload automatically")
 
@@ -123,9 +125,11 @@ class UpgradeTest(FillDatabaseData):
         tables_name = self.get_tables_name_of_keyspace(session=session, keyspace_name='truncate_ks')
         for table_name in tables_name:
             count = self.rows_to_list(session.execute(truncate_query.format(table_name)))
-            self.assertEqual(str(count[0][0]), '0',
-                             msg='Expected that there is no data in the table truncate_ks.{}, but found {} rows'
-                             .format(table_name, count[0][0]))
+            self.assertEqual(
+                str(count[0][0]),
+                '0',
+                msg=f'Expected that there is no data in the table truncate_ks.{table_name}, but found {count[0][0]} rows',
+            )
 
     def validate_truncated_entries_for_table(self, session, system_truncated=False):  # pylint: disable=invalid-name
         tables_id = self.get_tables_id_of_keyspace(session=session, keyspace_name='truncate_ks')
@@ -195,8 +199,11 @@ class UpgradeTest(FillDatabaseData):
             orig_is_enterprise = node.is_enterprise
             if node.is_rhel_like():
                 result = node.remoter.run("sudo yum search scylla-enterprise 2>&1", ignore_status=True)
-                new_is_enterprise = bool('scylla-enterprise.x86_64' in result.stdout or
-                                         'No matches found' not in result.stdout)
+                new_is_enterprise = (
+                    'scylla-enterprise.x86_64' in result.stdout
+                    or 'No matches found' not in result.stdout
+                )
+
             else:
                 result = node.remoter.run("sudo apt-cache search scylla-enterprise", ignore_status=True)
                 new_is_enterprise = 'scylla-enterprise' in result.stdout
@@ -204,33 +211,33 @@ class UpgradeTest(FillDatabaseData):
             scylla_pkg = 'scylla-enterprise' if new_is_enterprise else 'scylla'
             if orig_is_enterprise != new_is_enterprise:
                 self.upgrade_rollback_mode = 'reinstall'
-            ver_suffix = r'\*{}'.format(new_version) if new_version else ''
+            ver_suffix = f'\*{new_version}' if new_version else ''
             if self.upgrade_rollback_mode == 'reinstall':
                 if node.is_rhel_like():
                     node.remoter.run(r'sudo yum remove scylla\* -y')
-                    node.remoter.run('sudo yum install {}{} -y'.format(scylla_pkg, ver_suffix))
+                    node.remoter.run(f'sudo yum install {scylla_pkg}{ver_suffix} -y')
                 else:
                     node.remoter.run(r'sudo apt-get remove scylla\* -y')
                     # fixme: add publick key
                     node.remoter.run(
-                        r'sudo apt-get install {}{} -y '
-                        r'-o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" '.format(scylla_pkg, ver_suffix))
+                        f'sudo apt-get install {scylla_pkg}{ver_suffix} -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" '
+                    )
+
                 recover_conf(node)
                 node.remoter.run('sudo systemctl daemon-reload')
+            elif node.is_rhel_like():
+                node.remoter.run(f'sudo yum update {scylla_pkg}{ver_suffix}\* -y')
             else:
-                if node.is_rhel_like():
-                    node.remoter.run(r'sudo yum update {}{}\* -y'.format(scylla_pkg, ver_suffix))
-                else:
-                    node.remoter.run('sudo apt-get update')
-                    node.remoter.run(
-                        r'sudo apt-get dist-upgrade {} -y '
-                        r'-o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" '.format(scylla_pkg))
+                node.remoter.run('sudo apt-get update')
+                node.remoter.run(
+                    f'sudo apt-get dist-upgrade {scylla_pkg} -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" '
+                )
+
         if self.params.get('test_sst3'):
             node.remoter.run("echo 'enable_sstables_mc_format: true' |sudo tee --append /etc/scylla/scylla.yaml")
         if self.params.get('test_upgrade_from_installed_3_1_0'):
             node.remoter.run("echo 'enable_3_1_0_compatibility_mode: true' |sudo tee --append /etc/scylla/scylla.yaml")
-        authorization_in_upgrade = self.params.get('authorization_in_upgrade')
-        if authorization_in_upgrade:
+        if authorization_in_upgrade := self.params.get('authorization_in_upgrade'):
             node.remoter.run("echo 'authorizer: \"%s\"' |sudo tee --append /etc/scylla/scylla.yaml" %
                              authorization_in_upgrade)
         check_reload_systemd_config(node)
@@ -276,7 +283,7 @@ class UpgradeTest(FillDatabaseData):
         if self.upgrade_rollback_mode == 'reinstall' or not node.is_rhel_like():
             if node.is_rhel_like():
                 node.remoter.run(r'sudo yum remove scylla\* -y')
-                node.remoter.run(r'sudo yum install %s -y' % node.scylla_pkg())
+                node.remoter.run(f'sudo yum install {node.scylla_pkg()} -y')
             else:
                 node.remoter.run(r'sudo apt-get remove scylla\* -y')
                 node.remoter.run(
@@ -289,10 +296,10 @@ class UpgradeTest(FillDatabaseData):
             node.remoter.run(r'sudo yum downgrade scylla\*%s-\* -y' % self.orig_ver.split('-')[0])
         else:
             if new_introduced_pkgs:
-                node.remoter.run('sudo yum remove %s -y' % new_introduced_pkgs)
+                node.remoter.run(f'sudo yum remove {new_introduced_pkgs} -y')
             node.remoter.run(r'sudo yum downgrade scylla\* -y')
             if new_introduced_pkgs:
-                node.remoter.run('sudo yum install %s -y' % node.scylla_pkg())
+                node.remoter.run(f'sudo yum install {node.scylla_pkg()} -y')
             recover_conf(node)
             node.remoter.run('sudo systemctl daemon-reload')
 
@@ -308,7 +315,11 @@ class UpgradeTest(FillDatabaseData):
         # recover the system tables
         if self.params.get('recover_system_tables'):
             node.remoter.send_files('./data_dir/recover_system_tables.sh', '/tmp/')
-            node.remoter.run('bash /tmp/recover_system_tables.sh %s' % snapshot_name[0], verbose=True)
+            node.remoter.run(
+                f'bash /tmp/recover_system_tables.sh {snapshot_name[0]}',
+                verbose=True,
+            )
+
         if self.params.get('test_sst3'):
             node.remoter.run(
                 r'sudo sed -i -e "s/enable_sstables_mc_format:/#enable_sstables_mc_format:/g" /etc/scylla/scylla.yaml')
@@ -322,7 +333,10 @@ class UpgradeTest(FillDatabaseData):
         node.start_scylla_server(verify_up_timeout=500)
         result = node.remoter.run('scylla --version')
         new_ver = result.stdout
-        InfoEvent(message='original scylla-server version is %s, latest: %s' % (orig_ver, new_ver)).publish()
+        InfoEvent(
+            message=f'original scylla-server version is {orig_ver}, latest: {new_ver}'
+        ).publish()
+
         assert orig_ver != new_ver, "scylla-server version isn't changed"
 
         if upgrade_sstables:
@@ -382,13 +396,21 @@ class UpgradeTest(FillDatabaseData):
 
                 sstable_version_regex = re.compile(r'(\w+)-\d+-(.+)\.(db|txt|sha1|crc32)')
 
-                sstable_versions = {sstable_version_regex.search(f).group(
-                    1) for f in all_sstable_files if sstable_version_regex.search(f)}
+                sstable_versions = {
+                    sstable_version_regex.search(f)[1]
+                    for f in all_sstable_files
+                    if sstable_version_regex.search(f)
+                }
 
-                assert len(sstable_versions) == 1, "expected all table format to be the same found {}".format(sstable_versions)
-                assert list(sstable_versions)[0] == self.expected_sstable_format_version, (
-                    "expected to format version to be '{}', found '{}'".format(
-                        self.expected_sstable_format_version, list(sstable_versions)[0]))
+
+                assert (
+                    len(sstable_versions) == 1
+                ), f"expected all table format to be the same found {sstable_versions}"
+
+                assert (
+                    list(sstable_versions)[0] == self.expected_sstable_format_version
+                ), f"expected to format version to be '{self.expected_sstable_format_version}', found '{list(sstable_versions)[0]}'"
+
             except Exception as ex:  # pylint: disable=broad-except
                 self.log.warning(ex)
                 return False
@@ -447,10 +469,16 @@ class UpgradeTest(FillDatabaseData):
         # upgrade all the nodes in random order
         for i in indexes:
             self.db_cluster.node_to_upgrade = self.db_cluster.nodes[i]
-            InfoEvent(message='Upgrade Node %s begin' % self.db_cluster.node_to_upgrade.name).publish()
+            InfoEvent(
+                message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} begin'
+            ).publish()
+
             self.upgrade_node(self.db_cluster.node_to_upgrade)
             time.sleep(300)
-            InfoEvent(message='Upgrade Node %s ended' % self.db_cluster.node_to_upgrade.name).publish()
+            InfoEvent(
+                message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} ended'
+            ).publish()
+
 
         InfoEvent(message='Run some Queries to verify data AFTER UPGRADE').publish()
         self.verify_db_data()
@@ -460,7 +488,7 @@ class UpgradeTest(FillDatabaseData):
         if pre_fill:
             InfoEvent(message='Populate DB with many types of tables and data').publish()
             self.fill_db_data()
-        InfoEvent(message='Run some Queries to verify data %s' % note).publish()
+        InfoEvent(message=f'Run some Queries to verify data {note}').publish()
         self.verify_db_data()
         if rewrite_data:
             InfoEvent(message='Re-Populate DB with many types of tables and data').publish()
@@ -470,10 +498,13 @@ class UpgradeTest(FillDatabaseData):
     # in base and this view is not backing a secondary index)
     # @staticmethod
     def search_for_idx_token_error_after_upgrade(self, node, step):
-        self.log.debug('Search for idx_token error. Step {}'.format(step))
-        idx_token_error = list(node.follow_system_log(
-            patterns=["Column idx_token doesn't exist"], start_from_beginning=True))
-        if idx_token_error:
+        self.log.debug(f'Search for idx_token error. Step {step}')
+        if idx_token_error := list(
+            node.follow_system_log(
+                patterns=["Column idx_token doesn't exist"],
+                start_from_beginning=True,
+            )
+        ):
             IndexSpecialColumnErrorEvent(
                 message=f'Node: {node.name}. Step: {step}. '
                         f'Found error: index special column "idx_token" is not recognized'
@@ -491,7 +522,7 @@ class UpgradeTest(FillDatabaseData):
 
         return [x for x in chain.from_iterable(zip_longest(*dc_nodes.values())) if x]
 
-    def test_rolling_upgrade(self):  # pylint: disable=too-many-locals,too-many-statements
+    def test_rolling_upgrade(self):    # pylint: disable=too-many-locals,too-many-statements
         """
         Upgrade half of nodes in the cluster, and start special read workload
         during the stage. Checksum method is changed to xxhash from Scylla 2.2,
@@ -569,9 +600,15 @@ class UpgradeTest(FillDatabaseData):
             InfoEvent(message=step).publish()
             # upgrade first node
             self.db_cluster.node_to_upgrade = self.db_cluster.nodes[indexes[0]]
-            InfoEvent(message='Upgrade Node %s begin' % self.db_cluster.node_to_upgrade.name).publish()
+            InfoEvent(
+                message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} begin'
+            ).publish()
+
             self.upgrade_node(self.db_cluster.node_to_upgrade)
-            InfoEvent(message='Upgrade Node %s ended' % self.db_cluster.node_to_upgrade.name).publish()
+            InfoEvent(
+                message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} ended'
+            ).publish()
+
             self.db_cluster.node_to_upgrade.check_node_health()
 
             # wait for the prepare write workload to finish
@@ -584,8 +621,11 @@ class UpgradeTest(FillDatabaseData):
             # wait for the read workload to finish
             self.verify_stress_thread(read_stress_queue)
             InfoEvent(message='after upgraded one node').publish()
-            self.search_for_idx_token_error_after_upgrade(node=self.db_cluster.node_to_upgrade,
-                                                          step=step+' - after upgraded one node')
+            self.search_for_idx_token_error_after_upgrade(
+                node=self.db_cluster.node_to_upgrade,
+                step=f'{step} - after upgraded one node',
+            )
+
 
             # read workload
             InfoEvent(message='Starting c-s read workload for 10m').publish()
@@ -599,16 +639,25 @@ class UpgradeTest(FillDatabaseData):
             InfoEvent(message=step).publish()
             # upgrade second node
             self.db_cluster.node_to_upgrade = self.db_cluster.nodes[indexes[1]]
-            InfoEvent(message='Upgrade Node %s begin' % self.db_cluster.node_to_upgrade.name).publish()
+            InfoEvent(
+                message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} begin'
+            ).publish()
+
             self.upgrade_node(self.db_cluster.node_to_upgrade)
-            InfoEvent(message='Upgrade Node %s ended' % self.db_cluster.node_to_upgrade.name).publish()
+            InfoEvent(
+                message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} ended'
+            ).publish()
+
             self.db_cluster.node_to_upgrade.check_node_health()
 
             # wait for the 10m read workload to finish
             self.verify_stress_thread(read_10m_cs_thread_pool)
             self.fill_and_verify_db_data('after upgraded two nodes')
-            self.search_for_idx_token_error_after_upgrade(node=self.db_cluster.node_to_upgrade,
-                                                          step=step+' - after upgraded two nodes')
+            self.search_for_idx_token_error_after_upgrade(
+                node=self.db_cluster.node_to_upgrade,
+                step=f'{step} - after upgraded two nodes',
+            )
+
 
             # read workload (60m)
             InfoEvent(message='Starting c-s read workload for 60m').publish()
@@ -619,9 +668,15 @@ class UpgradeTest(FillDatabaseData):
 
             InfoEvent(message='Step3 - Rollback Second Node ').publish()
             # rollback second node
-            InfoEvent(message='Rollback Node %s begin' % self.db_cluster.nodes[indexes[1]].name).publish()
+            InfoEvent(
+                message=f'Rollback Node {self.db_cluster.nodes[indexes[1]].name} begin'
+            ).publish()
+
             self.rollback_node(self.db_cluster.nodes[indexes[1]])
-            InfoEvent(message='Rollback Node %s ended' % self.db_cluster.nodes[indexes[1]].name).publish()
+            InfoEvent(
+                message=f'Rollback Node {self.db_cluster.nodes[indexes[1]].name} ended'
+            ).publish()
+
             self.db_cluster.nodes[indexes[1]].check_node_health()
 
         step = 'Step4 - Verify data during mixed cluster mode '
@@ -638,11 +693,20 @@ class UpgradeTest(FillDatabaseData):
             InfoEvent(message=step).publish()
             for i in indexes[1:]:
                 self.db_cluster.node_to_upgrade = self.db_cluster.nodes[i]
-                InfoEvent(message='Upgrade Node %s begin' % self.db_cluster.node_to_upgrade.name).publish()
+                InfoEvent(
+                    message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} begin'
+                ).publish()
+
                 self.upgrade_node(self.db_cluster.node_to_upgrade)
-                InfoEvent(message='Upgrade Node %s ended' % self.db_cluster.node_to_upgrade.name).publish()
+                InfoEvent(
+                    message=f'Upgrade Node {self.db_cluster.node_to_upgrade.name} ended'
+                ).publish()
+
                 self.db_cluster.node_to_upgrade.check_node_health()
-                self.fill_and_verify_db_data('after upgraded %s' % self.db_cluster.node_to_upgrade.name)
+                self.fill_and_verify_db_data(
+                    f'after upgraded {self.db_cluster.node_to_upgrade.name}'
+                )
+
                 self.search_for_idx_token_error_after_upgrade(node=self.db_cluster.node_to_upgrade,
                                                               step=step)
 
@@ -664,7 +728,10 @@ class UpgradeTest(FillDatabaseData):
         if all(upgradesstables):
             InfoEvent(message='Upgrading sstables if new version is available').publish()
             tables_upgraded = self.db_cluster.run_func_parallel(func=self.wait_for_sstable_upgrade)
-            assert all(tables_upgraded), "Failed to upgrade the sstable format {}".format(tables_upgraded)
+            assert all(
+                tables_upgraded
+            ), f"Failed to upgrade the sstable format {tables_upgraded}"
+
 
         # Verify sstabledump
         InfoEvent(message='Starting sstabledump to verify correctness of sstables').publish()
@@ -730,8 +797,10 @@ class UpgradeTest(FillDatabaseData):
         workload_prioritization_error_num = self.count_log_errors(search_pattern='workload prioritization.*read_failure_exception',
                                                                   step=step, search_for_idx_token_error=False)
 
-        InfoEvent(message='schema_load_error_num: %s; workload_prioritization_error_num: %s' %
-                          (schema_load_error_num, workload_prioritization_error_num)).publish()
+        InfoEvent(
+            message=f'schema_load_error_num: {schema_load_error_num}; workload_prioritization_error_num: {workload_prioritization_error_num}'
+        ).publish()
+
 
         # Issue #https://github.com/scylladb/scylla-enterprise/issues/1391
         # By Eliran's comment: For 'Failed to load schema version' error which is expected and non offensive is
@@ -751,10 +820,10 @@ class UpgradeTest(FillDatabaseData):
     def _start_and_wait_for_node_upgrade(self, node: BaseNode, step: int) -> None:
         InfoEvent(
             message=f"Step {step} - Upgrade {node.name} from dc {node.dc_idx}").publish()
-        InfoEvent(message='Upgrade Node %s begins' % node.name).publish()
+        InfoEvent(message=f'Upgrade Node {node.name} begins').publish()
         with ignore_ycsb_connection_refused():
             self.upgrade_node(node, upgrade_sstables=self.params.get('upgrade_sstables'))
-        InfoEvent(message='Upgrade Node %s ended' % node.name).publish()
+        InfoEvent(message=f'Upgrade Node {node.name} ended').publish()
         node.check_node_health()
 
     def _start_and_wait_for_node_rollback(self, node: BaseNode, step: int) -> None:
@@ -762,10 +831,10 @@ class UpgradeTest(FillDatabaseData):
             message=f"Step {step} - "
                     f"Rollback {node.name} from dc {node.dc_idx}"
         ).publish()
-        InfoEvent(message='Rollback Node %s begin' % node).publish()
+        InfoEvent(message=f'Rollback Node {node} begin').publish()
         with ignore_ycsb_connection_refused():
             self.rollback_node(node, upgrade_sstables=self.params.get('upgrade_sstables'))
-        InfoEvent(message='Rollback Node %s ended' % node).publish()
+        InfoEvent(message=f'Rollback Node {node} ended').publish()
         node.check_node_health()
 
     def _run_stress_workload(self, workload_name: str, wait_for_finish: bool = False) -> CassandraStressThread:
@@ -775,7 +844,7 @@ class UpgradeTest(FillDatabaseData):
         workload_thread_pool = self.run_stress_thread(stress_cmd=stress_before_upgrade)
         if self.params.get('alternator_port'):
             self.pre_create_alternator_tables()
-        if wait_for_finish is True:
+        if wait_for_finish:
             InfoEvent(message=f"Waiting for {workload_name} to finish").publish()
             self.verify_stress_thread(workload_thread_pool)
         else:
@@ -807,7 +876,10 @@ class UpgradeTest(FillDatabaseData):
 
         # Rollback all nodes that where upgraded (not necessarily in the same order)
         random.shuffle(upgraded_nodes)
-        InfoEvent(message='Upgraded Nodes to be rollback are: %s' % upgraded_nodes).publish()
+        InfoEvent(
+            message=f'Upgraded Nodes to be rollback are: {upgraded_nodes}'
+        ).publish()
+
         for node in upgraded_nodes:
             self._start_and_wait_for_node_rollback(node, step=next(step))
 
@@ -849,7 +921,10 @@ class UpgradeTest(FillDatabaseData):
                 stress_cmd=self._cs_add_node_flag(self.params.get('stress_cmd_r'))
             )
         )
-        InfoEvent(message='Step5 - Upgrade cluster to %s' % target_upgrade_version).publish()
+        InfoEvent(
+            message=f'Step5 - Upgrade cluster to {target_upgrade_version}'
+        ).publish()
+
         self.db_cluster.upgrade_scylla_cluster(target_upgrade_version)
         InfoEvent(message='Step6 - Wait till cluster got upgraded').publish()
         self.wait_till_scylla_is_upgraded_on_all_nodes(target_upgrade_version)
@@ -907,8 +982,10 @@ class UpgradeTest(FillDatabaseData):
             step='AFTER UPGRADE',
             search_for_idx_token_error=False
         )
-        InfoEvent(message='schema_load_error_num: %s; workload_prioritization_error_num: %s' %
-                          (schema_load_error_num, workload_prioritization_error_num)).publish()
+        InfoEvent(
+            message=f'schema_load_error_num: {schema_load_error_num}; workload_prioritization_error_num: {workload_prioritization_error_num}'
+        ).publish()
+
 
         # Issue #https://github.com/scylladb/scylla-enterprise/issues/1391
         # By Eliran's comment: For 'Failed to load schema version' error which is expected and non offensive is

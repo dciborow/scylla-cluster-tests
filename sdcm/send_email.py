@@ -83,10 +83,7 @@ class Email():
         msg['from'] = self.sender
         assert recipients, "No recipients provided"
         msg['to'] = ','.join(recipients)
-        if html:
-            text_part = MIMEText(content, "html")
-        else:
-            text_part = MIMEText(content, "plain")
+        text_part = MIMEText(content, "html") if html else MIMEText(content, "plain")
         msg.attach(text_part)
         attachment_size = 0
         for path in files:
@@ -161,9 +158,9 @@ class BaseEmailReporter:
 
     def __init__(self, email_recipients=(), email_template_fp=None, logger=None, logdir=None):
         self.email_recipients = email_recipients
-        self.email_template_fp = email_template_fp if email_template_fp else self.email_template_file
-        self.log = logger if logger else LOGGER
-        self.logdir = logdir if logdir else tempfile.mkdtemp()
+        self.email_template_fp = email_template_fp or self.email_template_file
+        self.log = logger or LOGGER
+        self.logdir = logdir or tempfile.mkdtemp()
 
     @cached_property
     def fields(self) -> Tuple[str, ...]:
@@ -184,10 +181,11 @@ class BaseEmailReporter:
                               template_file will be ignored
         :return: html string
         """
-        if not template_str:
-            current_template = self.email_template_fp if not template_file else template_file
-        else:
-            current_template = self.email_template_fp
+        current_template = (
+            self.email_template_fp
+            if template_str
+            else template_file or self.email_template_fp
+        )
 
         self.log.info("Rendering results to html using '%s' template...", current_template)
         loader = jinja2.FileSystemLoader(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'report_templates'))
@@ -284,16 +282,14 @@ class BaseEmailReporter:
 
     @staticmethod
     def cut_report_data(report_data, attachments_data, reason):  # pylint: disable=unused-argument
-        if attachments_data is not None:
-            return report_data, None
-        return None, None
+        return (report_data, None) if attachments_data is not None else (None, None)
 
     @staticmethod
     def _get_last_events(report_data, category_size_limit, total_size_limit, events_in_category_limit, severities):
         output = {}
-        total_size = 0
         last_events = report_data.get('last_events')
         if last_events and isinstance(last_events, dict):
+            total_size = 0
             for severity, events in last_events.items():
                 if severity not in severities:
                     continue
@@ -311,16 +307,21 @@ class BaseEmailReporter:
                     severity_events.insert(0, event)
                     severity_events_length += len(event)
                     total_size += len(event)
-                if len(severity_events) == 0 and len(events) >= 1:
-                    severity_events.append(events[-1][category_size_limit])
-                    severity_events.append('There are more events. See log file.')
+                if not severity_events and len(events) >= 1:
+                    severity_events.extend(
+                        (
+                            events[-1][category_size_limit],
+                            'There are more events. See log file.',
+                        )
+                    )
+
         return output
 
     @staticmethod
     def _check_if_last_events_over_the_limit(report_data, category_size_limit, total_size_limit, events_in_category_limit):
-        total_size = 0
         last_events = report_data.get('last_events')
         if last_events and isinstance(last_events, dict):
+            total_size = 0
             for events in last_events.values():
                 severity_events_length = 0
                 for event in reversed(events):
@@ -401,9 +402,9 @@ class LongevityEmailReporter(BaseEmailReporter):
         return super().build_report(report_data)
 
     def build_report_attachments(self, attachments_data, template_str=None):
-        attachments = (self.build_email_report(attachments_data, template_str),
-                       self.build_issue_template(attachments_data))
-        return attachments
+        return self.build_email_report(
+            attachments_data, template_str
+        ), self.build_issue_template(attachments_data)
 
     def build_email_report(self, attachments_data, template_str=None):
         report_file = os.path.join(self.logdir, 'email_report.html')
@@ -573,7 +574,7 @@ def build_reporter(name: str,
         return None
 
 
-def get_running_instances_for_email_report(test_id: str, ip_filter: str = None):  # pylint: disable=too-many-locals
+def get_running_instances_for_email_report(test_id: str, ip_filter: str = None):    # pylint: disable=too-many-locals
     """Get running instances left after testrun
 
     Get all running instances leff after testrun is done.
@@ -598,12 +599,15 @@ def get_running_instances_for_email_report(test_id: str, ip_filter: str = None):
     instances = list_instances_aws(tags_dict=tags, group_as_region=True, running=True)
     for region in instances:
         for instance in instances[region]:
-            # NOTE: K8S nodes created by autoscaler never have 'Name' set.
-            name = 'N/A'
-            for tag in instance['Tags']:
-                if tag['Key'] == 'Name':
-                    name = tag['Value']
-                    break
+            name = next(
+                (
+                    tag['Value']
+                    for tag in instance['Tags']
+                    if tag['Key'] == 'Name'
+                ),
+                'N/A',
+            )
+
             public_ip_addr = instance.get('PublicIpAddress', 'N/A')
             if public_ip_addr != ip_filter:
                 nodes.append([name,
@@ -630,12 +634,11 @@ def get_running_instances_for_email_report(test_id: str, ip_filter: str = None):
                           "docker container",
                           builder_name])
     for builder_name, images in resources.get("images", {}).items():
-        for image in images:
-            nodes.append([", ".join(image.tags),
-                          "N/A",
-                          "N/A",
-                          "docker image",
-                          builder_name])
+        nodes.extend(
+            [", ".join(image.tags), "N/A", "N/A", "docker image", builder_name]
+            for image in images
+        )
+
     return nodes
 
 

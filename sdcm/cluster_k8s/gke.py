@@ -88,9 +88,7 @@ class GkeNodePool(CloudK8sNodePool):
                "--system-config-from-file /tmp/system_config.yaml",
                ]
         if not self.k8s_cluster.gke_k8s_release_channel:
-            # NOTE: only static K8S release channel supports disabling of autoupgrade
-            cmd.append("--no-enable-autoupgrade")
-            cmd.append("--no-enable-autorepair")
+            cmd.extend(("--no-enable-autoupgrade", "--no-enable-autorepair"))
         if self.disk_type:
             cmd.append(f"--disk-type {self.disk_type}")
         if self.disk_size:
@@ -112,7 +110,7 @@ class GkeNodePool(CloudK8sNodePool):
         self.k8s_cluster.gcloud.run(
             f"container clusters resize {self.k8s_cluster.short_cluster_name} --project {self.gce_project} "
             f"--zone {self.gce_zone} --node-pool {self.name} --num-nodes {num_nodes} --quiet")
-        self.num_nodes = int(num_nodes)
+        self.num_nodes = num_nodes
         self.wait_for_nodes_readiness()
 
     def undeploy(self):
@@ -206,8 +204,10 @@ class GkeCluster(KubernetesCluster):
             ('k8s-app', 'gcp-compute-persistent-disk-csi-driver'),
         ]
         if self.tenants_number > 1:
-            allowed_labels_on_scylla_node.append(('app.kubernetes.io/name', 'scylla'))
-            allowed_labels_on_scylla_node.append(('app', 'scylla'))
+            allowed_labels_on_scylla_node.extend(
+                (('app.kubernetes.io/name', 'scylla'), ('app', 'scylla'))
+            )
+
         else:
             allowed_labels_on_scylla_node.append(('scylla/cluster', self.k8s_scylla_cluster_name))
         if self.is_performance_tuning_enabled:
@@ -225,21 +225,10 @@ class GkeCluster(KubernetesCluster):
         tags = ",".join(f"{key}={value}" for key, value in self.tags.items())
         with self.gcloud as gcloud:
             # NOTE: only static K8S release channel supports disabling of autoupgrade
-            gcloud.run(f"container --project {self.gce_project} clusters create {self.short_cluster_name}"
-                       f" --no-enable-basic-auth"
-                       f" --zone {self.gce_zone}"
-                       f" --cluster-version {self.gke_cluster_version}"
-                       f"{' --release-channel ' + self.gke_k8s_release_channel if self.gke_k8s_release_channel else ''}"
-                       f" --network {self.gce_network}"
-                       f" --num-nodes {self.n_nodes}"
-                       f" --machine-type {self.gce_instance_type}"
-                       f" --image-type UBUNTU"
-                       f" --disk-type {self.gce_disk_type}"
-                       f" --disk-size {self.gce_disk_size}"
-                       f" --enable-stackdriver-kubernetes"
-                       f"{'' if self.gke_k8s_release_channel else ' --no-enable-autoupgrade'}"
-                       f"{'' if self.gke_k8s_release_channel else ' --no-enable-autorepair'}"
-                       f" --metadata {tags}")
+            gcloud.run(
+                f"container --project {self.gce_project} clusters create {self.short_cluster_name} --no-enable-basic-auth --zone {self.gce_zone} --cluster-version {self.gke_cluster_version}{f' --release-channel {self.gke_k8s_release_channel}' if self.gke_k8s_release_channel else ''} --network {self.gce_network} --num-nodes {self.n_nodes} --machine-type {self.gce_instance_type} --image-type UBUNTU --disk-type {self.gce_disk_type} --disk-size {self.gce_disk_size} --enable-stackdriver-kubernetes{'' if self.gke_k8s_release_channel else ' --no-enable-autoupgrade'}{'' if self.gke_k8s_release_channel else ' --no-enable-autorepair'} --metadata {tags}"
+            )
+
             self.patch_kubectl_config()
             self.deploy_node_pool(GkeNodePool(
                 name=self.AUXILIARY_POOL_NAME,
@@ -435,12 +424,13 @@ class GkeScyllaPodCluster(ScyllaPodCluster):
                   dc_idx: int = 0,
                   rack: int = 0,
                   enable_auto_bootstrap: bool = False) -> List[GkeScyllaPodContainer]:
-        new_nodes = super().add_nodes(count=count,
-                                      ec2_user_data=ec2_user_data,
-                                      dc_idx=dc_idx,
-                                      rack=rack,
-                                      enable_auto_bootstrap=enable_auto_bootstrap)
-        return new_nodes
+        return super().add_nodes(
+            count=count,
+            ec2_user_data=ec2_user_data,
+            dc_idx=dc_idx,
+            rack=rack,
+            enable_auto_bootstrap=enable_auto_bootstrap,
+        )
 
 
 class MonitorSetGKE(MonitorSetGCE):

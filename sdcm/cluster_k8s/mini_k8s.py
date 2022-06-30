@@ -294,7 +294,7 @@ class MinimalClusterBase(KubernetesCluster, metaclass=abc.ABCMeta):  # pylint: d
 
     @cached_property
     def minio_images(self):
-        with open(LOCAL_MINIO_DIR + '/values.yaml', mode='r', encoding='utf8') as minio_config_stream:
+        with open(f'{LOCAL_MINIO_DIR}/values.yaml', mode='r', encoding='utf8') as minio_config_stream:
             minio_config = yaml.safe_load(minio_config_stream)
             return [
                 f"{minio_config['image']['repository']}:{minio_config['image']['tag']}",
@@ -303,8 +303,7 @@ class MinimalClusterBase(KubernetesCluster, metaclass=abc.ABCMeta):  # pylint: d
 
     @cached_property
     def static_local_volume_provisioner_image(self):
-        with open(LOCAL_PROVISIONER_DIR + '/values.yaml',
-                  mode='r', encoding='utf8') as provisioner_config_stream:
+        with open(f'{LOCAL_PROVISIONER_DIR}/values.yaml', mode='r', encoding='utf8') as provisioner_config_stream:
             provisioner_config = yaml.safe_load(provisioner_config_stream)
             return provisioner_config['daemonset']['image']
 
@@ -517,9 +516,13 @@ class LocalKindCluster(LocalMinimalClusterBase):
             images_to_cache.append(self.scylla_image)
         if self.params.get("use_mgmt"):
             images_to_cache.extend(self.minio_images)
-            images_to_cache.append(f"scylladb/scylla:{SCYLLA_VERSION_IN_SCYLLA_MANAGER}")
-            images_to_cache.append(
-                f"scylladb/scylla-manager-agent:{SCYLLA_MANAGER_AGENT_VERSION_IN_SCYLLA_MANAGER}")
+            images_to_cache.extend(
+                (
+                    f"scylladb/scylla:{SCYLLA_VERSION_IN_SCYLLA_MANAGER}",
+                    f"scylladb/scylla-manager-agent:{SCYLLA_MANAGER_AGENT_VERSION_IN_SCYLLA_MANAGER}",
+                )
+            )
+
             if self.params.get("mgmt_docker_image"):
                 images_to_cache.append(self.params.get("mgmt_docker_image"))
         if self.params.get("scylla_mgmt_agent_version"):
@@ -531,8 +534,10 @@ class LocalKindCluster(LocalMinimalClusterBase):
         except ValueError as exc:
             LOGGER.warning("scylla-operator image won't be cached. Error: %s", str(exc))
 
-        for image_repo in ('kube-controllers', 'cni', 'node'):
-            images_to_cache.append(f"calico/{image_repo}:{CNI_CALICO_VERSION}")
+        images_to_cache.extend(
+            f"calico/{image_repo}:{CNI_CALICO_VERSION}"
+            for image_repo in ('kube-controllers', 'cni', 'node')
+        )
 
         for image in images_to_cache:
             self.docker_pull(image)
@@ -643,7 +648,7 @@ class LocalMinimalScyllaPodCluster(ScyllaPodCluster):
 
     @cluster.wait_for_init_wrap
     def wait_for_init(self, *_, node_list=None, verbose=False, timeout=None, **__):  # pylint: disable=unused-argument
-        node_list = node_list if node_list else self.nodes
+        node_list = node_list or self.nodes
         self.wait_for_nodes_up_and_normal(nodes=node_list)
 
     def upgrade_scylla_cluster(self, new_version: str) -> None:

@@ -64,7 +64,7 @@ class TestAddNewDc(LongevityTest):
         for keyspace in keyspaces:
             cql = f"ALTER KEYSPACE {keyspace} WITH replication = {network_topology_strategy}"
             node.run_cqlsh(cql)
-        self.log.info("Replication Strategies for {} reconfigured".format(keyspaces))
+        self.log.info(f"Replication Strategies for {keyspaces} reconfigured")
 
     def prewrite_db_with_data(self) -> None:
         self.log.info("Prewriting database...")

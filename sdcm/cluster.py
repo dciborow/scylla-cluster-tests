@@ -159,10 +159,7 @@ class NodeError(Exception):
         self.msg = msg
 
     def __str__(self):
-        if self.msg is not None:
-            return self.msg
-        else:
-            return ""
+        return self.msg if self.msg is not None else ""
 
 
 class PrometheusSnapshotErrorException(Exception):
@@ -180,7 +177,7 @@ class NodeStayInClusterAfterDecommission(Exception):
 def prepend_user_prefix(user_prefix, base_name):
     if not user_prefix:
         user_prefix = DEFAULT_USER_PREFIX
-    return '%s-%s' % (user_prefix, base_name)
+    return f'{user_prefix}-{base_name}'
 
 
 class UserRemoteCredentials():
@@ -192,7 +189,7 @@ class UserRemoteCredentials():
         self.key_pair_name = self.name
 
     def __str__(self):
-        return "Key Pair %s -> %s" % (self.name, self.key_file)
+        return f"Key Pair {self.name} -> {self.key_file}"
 
     def write_key_file(self):
         pass
@@ -334,7 +331,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         try:
             run = ArgusTestRun.get()
             if self.argus_resource in run.run_info.resources.allocated_resources:
-                reason = self.running_nemesis if self.running_nemesis else "GracefulShutdown"
+                reason = self.running_nemesis or "GracefulShutdown"
                 run.run_info.resources.detach_resource(self.argus_resource, reason=reason)
                 run.save()
         except Exception:  # pylint: disable=broad-except
@@ -345,23 +342,27 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         self.log.debug(self.remoter.ssh_debug_cmd())
 
     def _init_port_mapping(self):
-        if self.test_config.IP_SSH_CONNECTIONS == 'public' or self.test_config.MULTI_REGION:
-            if self.test_config.RSYSLOG_ADDRESS:
-                try:
-                    ContainerManager.destroy_container(self, "auto_ssh:rsyslog", ignore_keepalive=True)
-                except NotFound:
-                    pass
-                ContainerManager.run_container(self, "auto_ssh:rsyslog",
-                                               local_port=self.test_config.RSYSLOG_ADDRESS[1],
-                                               remote_port=self.test_config.RSYSLOG_SSH_TUNNEL_LOCAL_PORT)
-            if self.test_config.LDAP_ADDRESS and self.parent_cluster.node_type == "scylla-db":
-                try:
-                    ContainerManager.destroy_container(self, "auto_ssh:ldap", ignore_keepalive=True)
-                except NotFound:
-                    pass
-                ContainerManager.run_container(self, "auto_ssh:ldap",
-                                               local_port=self.test_config.LDAP_ADDRESS[1],
-                                               remote_port=LDAP_SSH_TUNNEL_LOCAL_PORT)
+        if (
+            self.test_config.IP_SSH_CONNECTIONS != 'public'
+            and not self.test_config.MULTI_REGION
+        ):
+            return
+        if self.test_config.RSYSLOG_ADDRESS:
+            try:
+                ContainerManager.destroy_container(self, "auto_ssh:rsyslog", ignore_keepalive=True)
+            except NotFound:
+                pass
+            ContainerManager.run_container(self, "auto_ssh:rsyslog",
+                                           local_port=self.test_config.RSYSLOG_ADDRESS[1],
+                                           remote_port=self.test_config.RSYSLOG_SSH_TUNNEL_LOCAL_PORT)
+        if self.test_config.LDAP_ADDRESS and self.parent_cluster.node_type == "scylla-db":
+            try:
+                ContainerManager.destroy_container(self, "auto_ssh:ldap", ignore_keepalive=True)
+            except NotFound:
+                pass
+            ContainerManager.run_container(self, "auto_ssh:ldap",
+                                           local_port=self.test_config.LDAP_ADDRESS[1],
+                                           remote_port=LDAP_SSH_TUNNEL_LOCAL_PORT)
 
     @property
     def region(self):
@@ -457,13 +458,12 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
     def system_log(self):
         orig_log_path = os.path.join(self.logdir, 'system.log')
 
-        if self.test_config.RSYSLOG_ADDRESS:
-            rsys_log_path = os.path.join(self.test_config.logdir(), 'hosts', self.short_hostname, 'messages.log')
-            if os.path.exists(rsys_log_path) and (not os.path.islink(orig_log_path)):
-                os.symlink(os.path.relpath(rsys_log_path, self.logdir), orig_log_path)
-            return rsys_log_path
-        else:
+        if not self.test_config.RSYSLOG_ADDRESS:
             return orig_log_path
+        rsys_log_path = os.path.join(self.test_config.logdir(), 'hosts', self.short_hostname, 'messages.log')
+        if os.path.exists(rsys_log_path) and (not os.path.islink(orig_log_path)):
+            os.symlink(os.path.relpath(rsys_log_path, self.logdir), orig_log_path)
+        return rsys_log_path
 
     database_log = system_log
 
@@ -532,8 +532,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
     def cassandra_stress_version(self):
         if not self._cassandra_stress_version:
             result = self.remoter.run(cmd="cassandra-stress version", ignore_status=True, verbose=True)
-            match = re.search("Version: (.*)", result.stdout)
-            if match:
+            if match := re.search("Version: (.*)", result.stdout):
                 self._cassandra_stress_version = match.group(1)
             else:
                 self.log.error("C-S version not found!")
@@ -755,32 +754,32 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         # pylint: disable=too-many-return-statements
         # install packages for special debian like system
         if self.is_ubuntu14() and ubuntu14_pkgs:
-            self.remoter.run('sudo apt-get install -y %s' % ubuntu14_pkgs)
+            self.remoter.run(f'sudo apt-get install -y {ubuntu14_pkgs}')
             return
         if self.is_ubuntu16() and ubuntu16_pkgs:
-            self.remoter.run('sudo apt-get install -y %s' % ubuntu16_pkgs)
+            self.remoter.run(f'sudo apt-get install -y {ubuntu16_pkgs}')
             return
         if self.is_ubuntu18() and ubuntu18_pkgs:
-            self.remoter.run('sudo apt-get install -y %s' % ubuntu18_pkgs)
+            self.remoter.run(f'sudo apt-get install -y {ubuntu18_pkgs}')
             return
         if self.is_ubuntu14() and ubuntu14_pkgs:
-            self.remoter.run('sudo apt-get install -y %s' % ubuntu14_pkgs)
+            self.remoter.run(f'sudo apt-get install -y {ubuntu14_pkgs}')
             return
         if self.is_debian8() and debian8_pkgs:
-            self.remoter.run('sudo apt-get install -y %s' % debian8_pkgs)
+            self.remoter.run(f'sudo apt-get install -y {debian8_pkgs}')
             return
         if self.is_debian9() and debian9_pkgs:
-            self.remoter.run('sudo apt-get install -y %s' % debian9_pkgs)
+            self.remoter.run(f'sudo apt-get install -y {debian9_pkgs}')
             return
 
         # install general packages for debian like system
         if apt_pkgs:
-            self.remoter.run('sudo apt-get install -y %s' % apt_pkgs)
+            self.remoter.run(f'sudo apt-get install -y {apt_pkgs}')
             return
 
         if not self.is_rhel_like():
             self.log.error('Install packages for unknown distro by yum')
-        self.remoter.run('sudo yum install -y %s' % pkgs)
+        self.remoter.run(f'sudo yum install -y {pkgs}')
 
     @staticmethod
     def is_docker() -> bool:
@@ -834,10 +833,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
 
     def _get_public_ip_address(self) -> Optional[str]:
         public_ips, _ = self._refresh_instance_state()
-        if public_ips:
-            return public_ips[0]
-        else:
-            return None
+        return public_ips[0] if public_ips else None
 
     @property
     def private_ip_address(self) -> Optional[str]:
@@ -847,10 +843,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
 
     def _get_private_ip_address(self) -> Optional[str]:
         _, private_ips = self._refresh_instance_state()
-        if private_ips:
-            return private_ips[0]
-        else:
-            return None
+        return private_ips[0] if private_ips else None
 
     @property
     def ipv6_ip_address(self) -> Optional[str]:
@@ -885,7 +878,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         if self.is_kubernetes():
             return self.ip_address
         with self.remote_scylla_yaml() as scylla_yaml:
-            return scylla_yaml.broadcast_rpc_address if scylla_yaml.broadcast_rpc_address else self.ip_address
+            return scylla_yaml.broadcast_rpc_address or self.ip_address
 
     @property
     def ip_address(self):
@@ -944,9 +937,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         raise NotImplementedError('Derived classes must implement check_spot_termination')
 
     def spot_monitoring_thread(self):
-        while True:
-            if self.termination_event.is_set():
-                break
+        while not self.termination_event.is_set():
             try:
                 self.wait_ssh_up(verbose=False)
             except Exception as ex:  # pylint: disable=broad-except
@@ -967,11 +958,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         if self._init_system is None:
             result = self.remoter.run('journalctl --version',
                                       ignore_status=True)
-            if result.exit_status == 0:
-                self._init_system = 'systemd'
-            else:
-                self._init_system = 'sysvinit'
-
+            self._init_system = 'systemd' if result.exit_status == 0 else 'sysvinit'
         return self._init_system
 
     def start_journal_thread(self):
@@ -984,17 +971,16 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         if self._journal_thread:
             self.log.debug("Use %s as logging daemon", type(self._journal_thread).__name__)
             self._journal_thread.start()
+        elif logs_transport == 'rsyslog':
+            self.log.debug("Use no logging daemon since log transport is rsyslog")
+        elif logs_transport == 'syslog-ng':
+            self.log.debug("Use no logging daemon since log transport is syslog-ng")
         else:
-            if logs_transport == 'rsyslog':
-                self.log.debug("Use no logging daemon since log transport is rsyslog")
-            elif logs_transport == 'syslog-ng':
-                self.log.debug("Use no logging daemon since log transport is syslog-ng")
-            else:
-                TestFrameworkEvent(
-                    source=self.__class__.__name__,
-                    source_method='start_journal_thread',
-                    message="Got no logging daemon by unknown reason"
-                ).publish_or_dump()
+            TestFrameworkEvent(
+                source=self.__class__.__name__,
+                source_method='start_journal_thread',
+                message="Got no logging daemon by unknown reason"
+            ).publish_or_dump()
 
     def start_coredump_thread(self):
         self._coredump_thread = CoredumpExportSystemdThread(self, self._maximum_number_of_cores_to_publish)
@@ -1019,12 +1005,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         return AlertSilencer(self._alert_manager, alert_name, duration, start, end)
 
     def __str__(self):
-        return 'Node %s [%s | %s%s] (seed: %s)' % (
-            self.name,
-            self.public_ip_address,
-            self.private_ip_address,
-            " | %s" % self.ipv6_ip_address if self.test_config.IP_SSH_CONNECTIONS == "ipv6" else "",
-            self.is_seed)
+        return f'Node {self.name} [{self.public_ip_address} | {self.private_ip_address}{f" | {self.ipv6_ip_address}" if self.test_config.IP_SSH_CONNECTIONS == "ipv6" else ""}] (seed: {self.is_seed})'
 
     def restart(self):
         raise NotImplementedError('Derived classes must implement restart')
@@ -1068,7 +1049,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
                 self.log.debug("Network isn't available, reboot might already start, %s" % ex)
                 return False
             except Exception as ex:  # pylint: disable=broad-except
-                self.log.debug('Failed to get uptime during reboot, %s' % ex)
+                self.log.debug(f'Failed to get uptime during reboot, {ex}')
                 return False
 
         if hard:
@@ -1122,9 +1103,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
 
     @property
     def n_coredumps(self):
-        if not self._coredump_thread:
-            return 0
-        return self._coredump_thread.n_coredumps
+        return self._coredump_thread.n_coredumps if self._coredump_thread else 0
 
     @log_run_info
     def stop_task_threads(self):
@@ -1193,9 +1172,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         LOGGER.info("%s destroyed", self)
 
     def wait_ssh_up(self, verbose=True, timeout=500):
-        text = None
-        if verbose:
-            text = '%s: Waiting for SSH to be up' % self
+        text = f'{self}: Waiting for SSH to be up' if verbose else None
         wait.wait_for(func=self.remoter.is_up, step=10, text=text, timeout=timeout, throw_exc=True)
 
     def is_port_used(self, port: int, service_name: str) -> bool:
@@ -1248,11 +1225,9 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
     def _parse_cfstats(cfstats_output):
         stat_dict = {}
         for line in cfstats_output.splitlines()[1:]:
-            # Example of line of cfstats output:
-            #       Space used (total): 123456
-            stat_line = [element for element in line.strip().split(':') if
-                         element]
-            if stat_line:
+            if stat_line := [
+                element for element in line.strip().split(':') if element
+            ]:
                 try:
                     try:
                         # Fix for space_node_threshold: if there are a few tables in the keyspace and space is used by the
@@ -1273,11 +1248,14 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
 
     def _get_tcpdump_logs(self, tcpdump_id):
         try:
-            pcap_name = 'tcpdump-%s.pcap' % tcpdump_id
+            pcap_name = f'tcpdump-{tcpdump_id}.pcap'
             pcap_tmp_file = os.path.join('/tmp', pcap_name)
             pcap_file = os.path.join(self.logdir, pcap_name)
-            self.remoter.run('sudo tcpdump -vv -i lo port 10000 -w %s > /dev/null 2>&1' %
-                             pcap_tmp_file, ignore_status=True)
+            self.remoter.run(
+                f'sudo tcpdump -vv -i lo port 10000 -w {pcap_tmp_file} > /dev/null 2>&1',
+                ignore_status=True,
+            )
+
             self.remoter.receive_files(src=pcap_tmp_file, dst=pcap_file)  # pylint: disable=not-callable
         except Exception as details:  # pylint: disable=broad-except
             self.log.error('Error running tcpdump on lo, tcp port 10000: %s',
@@ -1314,25 +1292,23 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         return self._parse_cfstats(result.stdout)
 
     def wait_jmx_up(self, verbose=True, timeout=None):
-        text = None
-        if verbose:
-            text = '%s: Waiting for JMX service to be up' % self
+        text = f'{self}: Waiting for JMX service to be up' if verbose else None
         wait.wait_for(func=self.jmx_up, step=60, text=text, timeout=timeout, throw_exc=True)
 
     def wait_jmx_down(self, verbose=True, timeout=None):
-        text = None
-        if verbose:
-            text = '%s: Waiting for JMX service to be down' % self
+        text = f'{self}: Waiting for JMX service to be down' if verbose else None
         wait.wait_for(func=lambda: not self.jmx_up(), step=60, text=text, timeout=timeout, throw_exc=True)
 
     @property
     def uuid(self):
         if not self._uuid and not self.is_nonroot_install:
             uuid_path = '/var/lib/scylla-housekeeping/housekeeping.uuid'
-            uuid_result = self.remoter.run('test -e %s' % uuid_path, ignore_status=True, verbose=True)
-            uuid_exists = uuid_result.ok
-            if uuid_exists:
-                result = self.remoter.run('cat %s' % uuid_path, verbose=True)
+            uuid_result = self.remoter.run(
+                f'test -e {uuid_path}', ignore_status=True, verbose=True
+            )
+
+            if uuid_exists := uuid_result.ok:
+                result = self.remoter.run(f'cat {uuid_path}', verbose=True)
                 self._uuid = result.stdout.strip()
         return self._uuid
 
@@ -1341,20 +1317,21 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         report uuid of test db nodes to ScyllaDB
         """
         mark_path = '/var/lib/scylla-housekeeping/housekeeping.uuid.marked'
-        cmd = 'curl "https://i6a5h9l1kl.execute-api.us-east-1.amazonaws.com/prod/check_version?uu=%s&mark=scylla"'
+        mark_exists = self.remoter.run(
+            f'test -e {mark_path}', ignore_status=True, verbose=verbose
+        ).ok
 
-        mark_exists = self.remoter.run('test -e %s' % mark_path, ignore_status=True, verbose=verbose).ok
         if self.uuid and not mark_exists:
+            cmd = 'curl "https://i6a5h9l1kl.execute-api.us-east-1.amazonaws.com/prod/check_version?uu=%s&mark=scylla"'
+
             self.remoter.run(cmd % self.uuid, ignore_status=True)
             if self.is_docker():
-                self.remoter.sudo('touch %s' % mark_path, verbose=verbose)
+                self.remoter.sudo(f'touch {mark_path}', verbose=verbose)
             else:
-                self.remoter.sudo('touch %s' % mark_path, verbose=verbose, user='scylla')
+                self.remoter.sudo(f'touch {mark_path}', verbose=verbose, user='scylla')
 
     def wait_db_up(self, verbose=True, timeout=3600):
-        text = None
-        if verbose:
-            text = '%s: Waiting for DB services to be up' % self
+        text = f'{self}: Waiting for DB services to be up' if verbose else None
         wait.wait_for(func=self.db_up, step=60, text=text, timeout=timeout, throw_exc=True)
         self.db_init_finished = True
         try:
@@ -1363,19 +1340,17 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
             self.log.error('Failed to report housekeeping uuid. Error details: %s', details)
 
     def is_manager_agent_up(self, port=None):
-        port = port if port else self.MANAGER_AGENT_PORT
+        port = port or self.MANAGER_AGENT_PORT
         # When the agent is IP, it should answer an https request of https://NODE_IP:10001/ping with status code 204
         response = requests.get(f"https://{normalize_ipv6_url(self.external_address)}:{port}/ping", verify=False)
         return response.status_code == 204
 
     def wait_manager_agent_up(self, verbose=True, timeout=180):
-        text = None
-        if verbose:
-            text = '%s: Waiting for manager agent to be up' % self
+        text = f'{self}: Waiting for manager agent to be up' if verbose else None
         wait.wait_for(func=self.is_manager_agent_up, step=10, text=text, timeout=timeout, throw_exc=True)
 
     def is_manager_server_up(self, port=None):
-        port = port if port else self.MANAGER_SERVER_PORT
+        port = port or self.MANAGER_SERVER_PORT
         # When the manager has started,
         # it should answer an http request of https://127.0.0.1:5080/ping with status code 204
         # The port is only open locally, hence using curl instead
@@ -1386,9 +1361,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         return http_status_code == 204
 
     def wait_manager_server_up(self, verbose=True, timeout=300, port=None):
-        text = None
-        if verbose:
-            text = '%s: Waiting for manager server to be up' % self
+        text = f'{self}: Waiting for manager server to be up' if verbose else None
         try:
             wait.wait_for(func=self.is_manager_server_up, port=port,
                           step=10, text=text, timeout=timeout, throw_exc=True)
@@ -1424,20 +1397,16 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
     def wait_apt_not_running(self, verbose=True):
         text = None
         if verbose:
-            text = '%s: Waiting for apt to finish running in the background' % self
+            text = f'{self}: Waiting for apt to finish running in the background'
         wait.wait_for(func=lambda: not self.apt_running(), step=60,
                       text=text, throw_exc=False)
 
     def wait_db_down(self, verbose=True, timeout=3600, check_interval=60):
-        text = None
-        if verbose:
-            text = '%s: Waiting for DB services to be down' % self
+        text = f'{self}: Waiting for DB services to be down' if verbose else None
         wait.wait_for(func=lambda: not self.db_up(), step=check_interval, text=text, timeout=timeout, throw_exc=True)
 
     def wait_cs_installed(self, verbose=True):
-        text = None
-        if verbose:
-            text = '%s: Waiting for cassandra-stress' % self
+        text = f'{self}: Waiting for cassandra-stress' if verbose else None
         wait.wait_for(func=self.cs_installed, step=60,
                       text=text, throw_exc=False)
 
@@ -1529,7 +1498,9 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         if not os.path.exists(transit_scylla_debug_file):
             db_node.remoter.receive_files(debug_file, transit_scylla_debug_file)
         res = self.remoter.run(
-            "test -f {}".format(final_scylla_debug_file), ignore_status=True, verbose=False)
+            f"test -f {final_scylla_debug_file}", ignore_status=True, verbose=False
+        )
+
         if res.exited != 0:
             self.remoter.send_files(transit_scylla_debug_file,  # pylint: disable=not-callable
                                     final_scylla_debug_file)
@@ -1561,9 +1532,8 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
     def datacenter_setup(self, datacenters):
         cmd = "sudo sh -c 'echo \"\ndc={}\nrack=RACK1\nprefer_local=true\ndc_suffix={}\n\" >> /etc/scylla/cassandra-rackdc.properties'"
         region_name = datacenters[self.dc_idx]
-        ret = re.findall('-([a-z]+).*-', region_name)
-        if ret:
-            dc_suffix = 'scylla_node_{}'.format(ret[0])
+        if ret := re.findall('-([a-z]+).*-', region_name):
+            dc_suffix = f'scylla_node_{ret[0]}'
         else:
             dc_suffix = region_name.replace('-', '_')
 
@@ -1743,22 +1713,22 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
             return
         if self.is_rhel_like():
             repo_path = '/etc/yum.repos.d/scylla.repo'
-            self.remoter.sudo('curl -o %s -L %s' % (repo_path, scylla_repo))
-            self.remoter.sudo('chown root:root %s' % repo_path)
-            self.remoter.sudo('chmod 644 %s' % repo_path)
-            result = self.remoter.run('cat %s' % repo_path, verbose=True)
+            self.remoter.sudo(f'curl -o {repo_path} -L {scylla_repo}')
+            self.remoter.sudo(f'chown root:root {repo_path}')
+            self.remoter.sudo(f'chmod 644 {repo_path}')
+            result = self.remoter.run(f'cat {repo_path}', verbose=True)
             verify_scylla_repo_file(result.stdout, is_rhel_like=True)
         elif self.distro.is_sles:
             repo_path = '/etc/zypp/repos.d/scylla.repo'
-            self.remoter.sudo('curl -o %s -L %s' % (repo_path, scylla_repo))
-            self.remoter.sudo('chown root:root %s' % repo_path)
-            self.remoter.sudo('chmod 644 %s' % repo_path)
-            result = self.remoter.run('cat %s' % repo_path, verbose=True)
+            self.remoter.sudo(f'curl -o {repo_path} -L {scylla_repo}')
+            self.remoter.sudo(f'chown root:root {repo_path}')
+            self.remoter.sudo(f'chmod 644 {repo_path}')
+            result = self.remoter.run(f'cat {repo_path}', verbose=True)
             verify_scylla_repo_file(result.stdout, is_rhel_like=True)
         else:
             repo_path = '/etc/apt/sources.list.d/scylla.list'
-            self.remoter.sudo('curl -o %s -L %s' % (repo_path, scylla_repo))
-            result = self.remoter.run('cat %s' % repo_path, verbose=True)
+            self.remoter.sudo(f'curl -o {repo_path} -L {scylla_repo}')
+            result = self.remoter.run(f'cat {repo_path}', verbose=True)
             verify_scylla_repo_file(result.stdout, is_rhel_like=False)
             for apt_key in self.parent_cluster.params.get("scylla_apt_keys"):
                 self.remoter.sudo(f"apt-key adv --keyserver keyserver.ubuntu.com --recv-keys {apt_key}", retry=3)
@@ -1961,7 +1931,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
             self.download_scylla_repo(scylla_repo)
             # hack cause of broken caused by EPEL
             self.remoter.run('sudo yum install -y python36-PyYAML', ignore_status=True)
-            self.remoter.run('sudo yum install -y {}'.format(self.scylla_pkg()))
+            self.remoter.run(f'sudo yum install -y {self.scylla_pkg()}')
             self.remoter.run('sudo yum install -y scylla-gdb', ignore_status=True)
         elif self.distro.is_sles15:
             self.remoter.sudo('zypper install -y rsync tcpdump screen')
@@ -1974,7 +1944,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
             self.remoter.sudo('SUSEConnect --product sle-module-python2/15.3/x86_64')
             self.remoter.sudo('zypper install -y python2-PyYAML', ignore_status=True)
             self.remoter.sudo('zypper install -y python3-PyYAML', ignore_status=True)
-            self.remoter.sudo('zypper install -y {}'.format(self.scylla_pkg()))
+            self.remoter.sudo(f'zypper install -y {self.scylla_pkg()}')
             self.remoter.sudo('zypper install -y scylla-gdb', ignore_status=True)
         else:
             if self.is_ubuntu14():
@@ -2041,9 +2011,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
             self.remoter.run('sudo apt-get install -y rsync tcpdump screen')
             self.download_scylla_repo(scylla_repo)
             self.remoter.run('sudo apt-get update')
-            self.remoter.run(
-                'sudo apt-get install -y '
-                ' {} '.format(self.scylla_pkg()))
+            self.remoter.run(f'sudo apt-get install -y  {self.scylla_pkg()} ')
 
         # THIS IS A WORKAROUND FOR ISSUE https://github.com/scylladb/scylla/issues/10442
         # the issue is related to JDK version, and the fix was added to later patches of multiple base versions,
@@ -2067,11 +2035,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         # Download unified package
         self.remoter.run(f'curl {unified_package} -o ./unified_package.tar.gz')
 
-        if nonroot:
-            additional_pkgs = ''
-        else:
-            additional_pkgs = 'xfsprogs mdadm'
-
+        additional_pkgs = '' if nonroot else 'xfsprogs mdadm'
         # Offline install does't provide openjdk-8, it has to be installed in advance
         # https://github.com/scylladb/scylla-jmx/issues/127
         if self.is_rhel_like():
@@ -2087,7 +2051,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
 
         if nonroot:
             # Make sure env variable (XDG_RUNTIME_DIR) is set, which is necessary for systemd user
-            if not 'XDG_RUNTIME_DIR=' in self.remoter.run('env').stdout:
+            if 'XDG_RUNTIME_DIR=' not in self.remoter.run('env').stdout:
                 # Reload the env variables by ssh reconnect
                 self.remoter.run('env', verbose=True, change_context=True)
                 assert 'XDG_RUNTIME_DIR' in self.remoter.run('env', verbose=True).stdout
@@ -2200,7 +2164,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         """
         patt = (r'nvme*n*', r'nvme\d+n\d+') if nvme else (r'sd[b-z]', r'sd\w+')
         result = self.remoter.run(f"ls /dev/{patt[0]}", ignore_status=True)
-        disks = re.findall(r'/dev/{}'.format(patt[1]), result.stdout)
+        disks = re.findall(f'/dev/{patt[1]}', result.stdout)
         # filter out the used disk, the free disk doesn't have partition.
         disks = [i for i in disks if disks.count(i) == 1]
         assert disks, 'Failed to find disks!'
@@ -2211,11 +2175,8 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
     def kernel_version(self):
         if not self._kernel_version:
             res = self.remoter.run("uname -r", ignore_status=True)
-            if res.exit_status:
-                self._kernel_version = "unknown"
-            else:
-                self._kernel_version = res.stdout.strip()
-            self.log.info("Found kernel version: {}".format(self._kernel_version))
+            self._kernel_version = "unknown" if res.exit_status else res.stdout.strip()
+            self.log.info(f"Found kernel version: {self._kernel_version}")
         return self._kernel_version
 
     def increase_jmx_heap_memory(self, jmx_memory):
@@ -2248,15 +2209,19 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
                 The kernel bug doesn't occur all the time, so we can get some succeed gce instance.
                 the config files are copied from a succeed GCE instance (same instance type, same test
             """.format(self.kernel_version)))
-            self.remoter.run('sudo /usr/lib/scylla/scylla_setup --nic {} --disks {} --no-io-setup {}'
-                             .format(devname, ','.join(disks), extra_setup_args))
+            self.remoter.run(
+                f"sudo /usr/lib/scylla/scylla_setup --nic {devname} --disks {','.join(disks)} --no-io-setup {extra_setup_args}"
+            )
+
             for conf in ['io.conf', 'io_properties.yaml']:
                 self.remoter.send_files(src=os.path.join('./configurations/', conf),  # pylint: disable=not-callable
                                         dst='/tmp/')
                 self.remoter.run('sudo mv /tmp/{0} /etc/scylla.d/{0}'.format(conf))
         else:
-            self.remoter.run('sudo /usr/lib/scylla/scylla_setup --nic {} --disks {} --setup-nic-and-disks {}'
-                             .format(devname, ','.join(disks), extra_setup_args))
+            self.remoter.run(
+                f"sudo /usr/lib/scylla/scylla_setup --nic {devname} --disks {','.join(disks)} --setup-nic-and-disks {extra_setup_args}"
+            )
+
 
         result = self.remoter.run('cat /proc/mounts')
         assert ' /var/lib/scylla ' in result.stdout, "RAID setup failed, scylla directory isn't mounted correctly"
@@ -2383,10 +2348,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
 
     def wrap_cmd_with_permission(self, cmd):
         """Generate commandline prefix according to the privilege"""
-        if self.is_nonroot_install:
-            return f'{cmd} --user'
-        else:
-            return f'sudo {cmd}'
+        return f'{cmd} --user' if self.is_nonroot_install else f'sudo {cmd}'
 
     @property
     def systemctl(self):
@@ -2516,14 +2478,14 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         Returns:
             [type] -- path to created directory structure
         """
-        root_dir = '/tmp/%s' % self.name
-        self.remoter.run('mkdir -p %s' % root_dir, ignore_status=True)
+        root_dir = f'/tmp/{self.name}'
+        self.remoter.run(f'mkdir -p {root_dir}', ignore_status=True)
         for f in fileslist:
             if self.file_exists(f):
                 old_full_path = os.path.dirname(f)[1:]
                 new_full_path = os.path.join(root_dir, old_full_path)
-                self.remoter.run('mkdir -p %s' % new_full_path, ignore_status=True)
-                self.remoter.run('cp -r %s %s' % (f, new_full_path), ignore_status=True)
+                self.remoter.run(f'mkdir -p {new_full_path}', ignore_status=True)
+                self.remoter.run(f'cp -r {f} {new_full_path}', ignore_status=True)
         return root_dir
 
     def generate_coredump_file(self, restart_scylla=True):
@@ -2539,14 +2501,20 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         # TODO add to each type of node
         # comment raising exception. replace with log warning
         # raise NotImplementedError('Derived classes must implement get_console_output')
-        self.log.warning('Method get_console_output is not implemented for %s' % self.__class__.__name__)
+        self.log.warning(
+            f'Method get_console_output is not implemented for {self.__class__.__name__}'
+        )
+
         return ''
 
     def get_console_screenshot(self):
         # TODO add to each type of node
         # comment raising exception. replace with log warning
         # raise NotImplementedError('Derived classes must implement get_console_output')
-        self.log.warning('Method get_console_screenshot is not implemented for %s' % self.__class__.__name__)
+        self.log.warning(
+            f'Method get_console_screenshot is not implemented for {self.__class__.__name__}'
+        )
+
         return b''
 
     # Default value of murmur3_partitioner_ignore_msb_bits parameter is 12
@@ -2583,8 +2551,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
                             'Check the log for the details')
 
     def _gen_nodetool_cmd(self, sub_cmd, args, options):
-        credentials = self.parent_cluster.get_db_auth()
-        if credentials:
+        if credentials := self.parent_cluster.get_db_auth():
             options += "-u {} -pw '{}' ".format(*credentials)
         return f"{self.add_install_prefix('/usr/bin/nodetool')} {options} {sub_cmd} {args}"
 
@@ -2697,9 +2664,8 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
                 for node_ip, node_properties in dc_status.items():
                     if node := self.parent_cluster.find_node_by_ip(node_ip):
                         nodes_status[node] = {'status': node_properties['state'], 'dc': dc}
-                    else:
-                        if node_ip:
-                            LOGGER.error("Get nodes statuses. Failed to find a node in cluster by IP: %s", node_ip)
+                    elif node_ip:
+                        LOGGER.error("Get nodes statuses. Failed to find a node in cluster by IP: %s", node_ip)
 
         except Exception as exc:  # pylint: disable=broad-except
             ClusterHealthValidatorEvent.NodeStatus(
@@ -2738,9 +2704,8 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
                     'schema_version': line_splitted[6].strip(),
                     'supported_features': line_splitted[7].strip(),
                 }
-            else:
-                if peer:
-                    LOGGER.error("Get peers info. Failed to find a node in the cluster by IP: %s", peer)
+            elif peer:
+                LOGGER.error("Get peers info. Failed to find a node in the cluster by IP: %s", peer)
 
         return peers_details
 
@@ -2786,7 +2751,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         """cqlsh [options] [host [port]]"""
         credentials = self.parent_cluster.get_db_auth()
         auth_params = "-u {} -p '{}'".format(*credentials) if credentials else ''
-        use_keyspace = "--keyspace {}".format(keyspace) if keyspace else ""
+        use_keyspace = f"--keyspace {keyspace}" if keyspace else ""
         ssl_params = '--ssl' if self.parent_cluster.params.get("client_encrypt") else ''
         options = "--no-color {auth_params} {use_keyspace} --request-timeout={timeout} " \
                   "--connect-timeout={connect_timeout} {ssl_params}".format(
@@ -2798,10 +2763,17 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
     def run_cqlsh(self, cmd, keyspace=None, port=None, timeout=120, verbose=True, split=False, target_db_node=None,
                   connect_timeout=60, num_retry_on_failure=1):
         """Runs CQL command using cqlsh utility"""
-        cmd = self._gen_cqlsh_cmd(command=cmd, keyspace=keyspace, timeout=timeout,
-                                  host=self.scylla_listen_address if not target_db_node else target_db_node.ip_address,
-                                  port=port if port else self.CQL_PORT,
-                                  connect_timeout=connect_timeout)
+        cmd = self._gen_cqlsh_cmd(
+            command=cmd,
+            keyspace=keyspace,
+            timeout=timeout,
+            host=target_db_node.ip_address
+            if target_db_node
+            else self.scylla_listen_address,
+            port=port or self.CQL_PORT,
+            connect_timeout=connect_timeout,
+        )
+
         while num_retry_on_failure:
             try:
                 cqlsh_out = self.remoter.run(cmd, timeout=timeout + 30,  # we give 30 seconds to cqlsh timeout mechanism to work
@@ -2819,7 +2791,11 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         #       3
         #
         #      (10 rows)
-        return cqlsh_out if not split else list(map(str.strip, cqlsh_out.stdout.splitlines()))
+        return (
+            list(map(str.strip, cqlsh_out.stdout.splitlines()))
+            if split
+            else cqlsh_out
+        )
 
     def run_startup_script(self):
         startup_script_remote_path = '/tmp/sct-startup.sh'
@@ -2857,7 +2833,9 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
             self.log.warning("Swap file is not used on node %s.\nError details: %s", self, result.stderr)
 
     def set_hostname(self):
-        self.log.warning('Method set_hostname is not implemented for %s' % self.__class__.__name__)
+        self.log.warning(
+            f'Method set_hostname is not implemented for {self.__class__.__name__}'
+        )
 
     def configure_remote_logging(self):
         if self.parent_cluster.params.get('logs_transport') not in ['rsyslog', 'syslog-ng']:
@@ -2941,7 +2919,7 @@ class BaseNode(AutoSshContainerMixin, WebDriverContainerMixin):  # pylint: disab
         for line in result.stdout.strip().split("\n"):
             try:
                 name, value = line.strip().split("=", 1)
-                sysctl_properties.update({name.strip(): value.strip()})
+                sysctl_properties[name.strip()] = value.strip()
             except ValueError:
                 self.log.error(f"Could not parse sysctl line: {line}")
 
@@ -3039,8 +3017,8 @@ class BaseCluster:  # pylint: disable=too-many-instance-attributes,too-many-publ
             self.uuid = cluster_uuid
         self.node_type = node_type
         self.shortid = str(self.uuid)[:8]
-        self.name = '%s-%s' % (cluster_prefix, self.shortid)
-        self.node_prefix = '%s-%s' % (node_prefix, self.shortid)
+        self.name = f'{cluster_prefix}-{self.shortid}'
+        self.node_prefix = f'{node_prefix}-{self.shortid}'
         self._node_index = 0
         # I wanted to avoid some parameter passing
         # from the tester class to the cluster test.
@@ -3063,7 +3041,10 @@ class BaseCluster:  # pylint: disable=too-many-instance-attributes,too-many-publ
             # get_node_ips_param should be defined in child
             self._node_public_ips = self.params.get(self.get_node_ips_param(public_ip=True)) or []
             self._node_private_ips = self.params.get(self.get_node_ips_param(public_ip=False)) or []
-            self.log.debug('Node public IPs: {}, private IPs: {}'.format(self._node_public_ips, self._node_private_ips))
+            self.log.debug(
+                f'Node public IPs: {self._node_public_ips}, private IPs: {self._node_private_ips}'
+            )
+
 
         # NOTE: following is needed in case of K8S where we init multiple DB clusters first
         #       and only then we add nodes to it calling code in parallel.
@@ -3074,7 +3055,7 @@ class BaseCluster:  # pylint: disable=too-many-instance-attributes,too-many-publ
             elif isinstance(n_nodes, int):  # legacy type
                 self.add_nodes(n_nodes, enable_auto_bootstrap=self.auto_bootstrap)
             else:
-                raise ValueError('Unsupported type: {}'.format(type(n_nodes)))
+                raise ValueError(f'Unsupported type: {type(n_nodes)}')
             self.run_node_benchmarks()
         self.coredumps = {}
         super().__init__()
@@ -3103,11 +3084,14 @@ class BaseCluster:  # pylint: disable=too-many-instance-attributes,too-many-publ
         return [node.ip_address for node in self.dead_nodes_list]
 
     def find_node_by_ip(self, node_ip):
-        for node in self.nodes:
-            if node_ip in node.get_all_ip_addresses():
-                return node
-
-        return None
+        return next(
+            (
+                node
+                for node in self.nodes
+                if node_ip in node.get_all_ip_addresses()
+            ),
+            None,
+        )
 
     def init_log_directory(self):
         assert '_SCT_TEST_LOGDIR' in os.environ
@@ -3116,7 +3100,7 @@ class BaseCluster:  # pylint: disable=too-many-instance-attributes,too-many-publ
 
     def nodes_by_region(self, nodes=None) -> dict:
         """:returns {region_name: [list of nodes]}"""
-        nodes = nodes if nodes else self.nodes
+        nodes = nodes or self.nodes
         grouped_by_region = defaultdict(list)
         for node in nodes:
             grouped_by_region[node.region].append(node)
@@ -3186,9 +3170,10 @@ class BaseCluster:  # pylint: disable=too-many-instance-attributes,too-many-publ
     def get_node_database_errors(self):
         errors = {}
         for node in self.nodes:
-            node_errors = list(node.follow_system_log(start_from_beginning=True))
-            if node_errors:
-                errors.update({node.name: node_errors})
+            if node_errors := list(
+                node.follow_system_log(start_from_beginning=True)
+            ):
+                errors[node.name] = node_errors
         return errors
 
     def destroy(self):
@@ -3261,7 +3246,7 @@ class BaseCluster:  # pylint: disable=too-many-instance-attributes,too-many-publ
             protocol_version = 3
 
         credentials = self.get_db_auth()
-        user, password = credentials if credentials else (None, None)
+        user, password = credentials or (None, None)
 
         if user is not None:
             auth_provider = PlainTextAuthProvider(username=user, password=password)
@@ -3847,13 +3832,11 @@ class BaseScyllaCluster:  # pylint: disable=too-many-public-methods, too-many-in
         if node_list is None:
             node_list = self.nodes
 
-        new_scylla_bin = self.params.get('update_db_binary')
-        if new_scylla_bin:
+        if new_scylla_bin := self.params.get('update_db_binary'):
             self._update_db_binary(new_scylla_bin, node_list, start_service=start_service)
 
     def update_db_packages(self, node_list=None, start_service=True):
-        new_scylla_bin = self.params.get('update_db_packages')
-        if new_scylla_bin:
+        if new_scylla_bin := self.params.get('update_db_packages'):
             if node_list is None:
                 node_list = self.nodes
             self._update_db_packages(new_scylla_bin, node_list, start_service=start_service)
